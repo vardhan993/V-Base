@@ -1,0 +1,27 @@
+# Never ship environment files, local data or caches into the image.
+.env
+.env.*
+!.env.example
+
+# Imported business data and backups must not be baked into an image.
+uploads/
+backups/
+*.db
+*.sqlite
+
+# Python build/test artifacts.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Editor and VCS noise.
+.git/
+.gitignore
+.idea/
+.vscode/

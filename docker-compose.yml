@@ -1,0 +1,66 @@
+# V-Base — local/self-hosted stack.
+#
+#   docker compose up --build
+#
+# Brings up PostgreSQL 16 and the API. The SPA is not served here: run it with
+# `npm run dev` in apps/web (or deploy the built dist/ to Cloudflare). The
+# browser talks to the API, never to PostgreSQL.
+#
+# Secrets are read from backend/.env (see backend/.env.example). Nothing in this
+# file is a real credential — the values below are development defaults for the
+# bundled database only.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: vbase-db
+    environment:
+      POSTGRES_USER: vbase
+      POSTGRES_PASSWORD: vbase_dev_pw
+      POSTGRES_DB: vbase
+      # Deterministic collation so index ordering matches in every environment.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5433:5432"
+    volumes:
+      - vbase-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vbase -d vbase"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vbase-api
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      # Overrides backend/.env so the container reaches the compose database by
+      # service name rather than 127.0.0.1.
+      DATABASE_URL: postgresql+asyncpg://vbase:vbase_dev_pw@db:5432/vbase
+      ENVIRONMENT: development
+      BACKEND_HOST: 0.0.0.0
+      FRONTEND_URL: http://localhost:5173
+      # The compose network is trusted and already isolated.
+      DB_USE_NULL_POOL: "false"
+      UPLOADS_DIR: /app/uploads
+      BACKUPS_DIR: /app/backups
+    ports:
+      - "8000:8000"
+    volumes:
+      # Named volumes keep imported files and backups across restarts. Replace
+      # with bind mounts if you want them visible on the host.
+      - vbase-uploads:/app/uploads
+      - vbase-backups:/app/backups
+    restart: unless-stopped
+
+volumes:
+  vbase-db-data:
+  vbase-uploads:
+  vbase-backups:

@@ -1,0 +1,79 @@
+# ---------------------------------------------------------------------------
+# V-Base — Render blueprint for the API (free instance, no credit card).
+#
+# Deploy: Render dashboard → New → Blueprint → pick this repository.
+# Render reads this file, creates the web service, and prompts for every value
+# marked `sync: false` (secrets are never stored in the repository).
+#
+# Why Render and not Cloudflare Workers: Python Workers run CPython on Pyodide
+# inside a V8 isolate. Cloudflare's own documentation states that async
+# SQLAlchemy is not supported there (no greenlet), and the openpyxl/pandas import
+# stack is not available as PyEmscripten wheels. This backend needs all three, so
+# a real Python runtime is required.
+#
+# Free-instance reality check (verified against Render's docs):
+#   * sleeps after 15 minutes without traffic; ~1 minute to wake on the next request
+#   * 750 free instance-hours per workspace per calendar month, shared
+#   * free managed TLS and configurable HTTP health checks
+#   * no payment method required, and no automatic upgrade to a paid plan
+# Point a free uptime pinger at /health if the cold start is a problem.
+# ---------------------------------------------------------------------------
+services:
+  - type: web
+    name: vbase-api
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend
+    branch: main
+    # `autoDeploy: false` keeps production changes deliberate: deploy from the
+    # Render dashboard or with `render deploys create` after a green test run.
+    autoDeploy: false
+    healthCheckPath: /health/ready
+    # Migrations run before the server starts, so a fresh database is always at
+    # head. `nexus.commands.migrate` fails loudly if PostgreSQL is unreachable,
+    # which stops a broken deploy from serving traffic.
+    buildCommand: pip install --upgrade pip && pip install .
+    startCommand: python -m nexus.commands.migrate upgrade && uvicorn nexus.app:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      # Render terminates TLS in front of the service, so the session cookie must
+      # be Secure and the app must trust forwarded headers (set above).
+      - key: ENVIRONMENT
+        value: production
+      # The exact browser origin allowed to call this API. Update it to your
+      # Workers/Pages URL (and any custom domain) or CORS and CSRF will reject
+      # the SPA. Comma-separate multiple origins.
+      - key: FRONTEND_URL
+        sync: false
+      - key: EXTRA_ALLOWED_ORIGINS
+        sync: false
+      # Neon pooled connection string, with the driver rewritten:
+      #   postgresql+asyncpg://USER:PASSWORD@ep-xxx-pooler.REGION.aws.neon.tech/DBNAME?sslmode=require
+      - key: DATABASE_URL
+        sync: false
+      # Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+      - key: SECRET_KEY
+        sync: false
+      # Keep the pool small: Neon's 0.25 CU compute allows ~97 application
+      # connections in total, and a free instance runs a single worker.
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_MAX_OVERFLOW
+        value: "5"
+      # Recycle below Neon's idle-compute suspension so a dead socket is never
+      # reused (pool_pre_ping also covers this).
+      - key: DB_POOL_RECYCLE
+        value: "300"
+      # Render's filesystem is ephemeral. Backups live here only until the next
+      # deploy, which is why the Backup page also offers a direct download and
+      # docs/BACKUP.md leads with the host's own restore feature.
+      - key: UPLOADS_DIR
+        value: /tmp/vbase/uploads
+      - key: BACKUPS_DIR
+        value: /tmp/vbase/backups
+      - key: RATE_LIMIT_AUTH_PER_MINUTE
+        value: "10"
+      - key: RATE_LIMIT_WRITE_PER_MINUTE
+        value: "240"

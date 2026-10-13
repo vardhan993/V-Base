@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------------------
+# V-Base — never commit secrets, imported business data, or build output.
+# ---------------------------------------------------------------------------
+
+# Environment files (templates ending in .example ARE committed).
+.env
+.env.local
+.env.*.local
+backend/.env
+apps/web/.env
+!.env.example
+!backend/.env.example
+!apps/web/.env.example
+
+# Uploaded spreadsheets and generated backups contain real business data.
+uploads/
+backups/
+
+# Any local database files left over from earlier projects must never reappear.
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+.vite/
+npm-debug.log*
+yarn-error.log*
+
+# Cloudflare / hosting
+.wrangler/
+.dev.vars
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local run state written by the start/stop scripts.
+.run/
+
+# Agent/client scratch: preview logs and the local project id.
+.freebuff/
+
+# Cloudflare Wrangler build cache for the Sites deployment.
+apps/web/.wrangler/

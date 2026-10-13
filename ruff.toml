@@ -1,0 +1,32 @@
+# Ruff configuration for the whole repository.
+#
+# One config governs backend/src and tests/ so `ruff check .` means the same
+# thing everywhere (including CI). The application package lives under a src/
+# layout, so the default import root is declared here rather than per-file.
+line-length = 120
+target-version = "py312"
+src = ["backend/src", "tests"]
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # import sorting
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+ignore = [
+    # Long lines are handled by the formatter's judgement; several SQLAlchemy
+    # query builders in this codebase read better as one line.
+    "E501",
+    # FastAPI's dependency-injection signature is `Depends(...)` as a default
+    # argument; that is the documented idiom, not a mutable-default bug.
+    "B008",
+]
+
+[lint.per-file-ignores]
+# Tests assert on internal behaviour and construct fixtures with deliberately
+# wrong input, so a few rules that guard application code do not apply.
+"tests/**" = [
+    "E402",  # sys.path setup in conftest precedes the imports it enables
+]
