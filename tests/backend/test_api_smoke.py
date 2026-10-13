@@ -404,7 +404,7 @@ def test_settings_app_info_describes_postgres(auth_client):
     assert body["app_name"] == "V-Base"
     assert body["tagline"] == "Your Business Data. One Powerful Base."
     assert body["database_engine"] == "postgresql"
-    assert body["database"]["alembic_revision"] == "0001_initial"
+    assert body["database"]["alembic_revision"] == "0002_crm_stage_tasks"
     assert body["database"]["size_bytes"] > 0
     # Credentials must never be exposed.
     assert "password" not in str(body).lower()

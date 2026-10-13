@@ -74,6 +74,10 @@ export function DataQualityPage() {
                   <span className="text-sm font-medium text-[var(--vbase-red)]">{summary.contacts.invalid_email}</span>
                 </li>
                 <li className="flex items-center justify-between rounded-md border border-[var(--vbase-border)] bg-[var(--vbase-bg-alt)] px-4 py-3">
+                  <span className="text-sm text-[var(--vbase-slate800)]">Phones without a country code</span>
+                  <span className="text-sm font-medium text-[var(--vbase-amber)]">{summary.contacts.phone_missing_country_code}</span>
+                </li>
+                <li className="flex items-center justify-between rounded-md border border-[var(--vbase-border)] bg-[var(--vbase-bg-alt)] px-4 py-3">
                   <span className="text-sm text-[var(--vbase-slate800)]">Companies missing website</span>
                   <span className="text-sm font-medium text-[var(--vbase-slate600)]">{summary.companies.missing_website} / {summary.companies.total}</span>
                 </li>

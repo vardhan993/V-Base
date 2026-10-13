@@ -16,6 +16,7 @@ from nexus.api.v1 import (
     saved_views,
     search,
     tags,
+    tasks,
     users,
 )
 from nexus.api.v1 import settings as settings_router
@@ -29,6 +30,7 @@ api_router.include_router(import_.router)
 api_router.include_router(search.router)
 api_router.include_router(lists.router)
 api_router.include_router(tags.router)
+api_router.include_router(tasks.router)
 api_router.include_router(duplicates.router)
 api_router.include_router(quality.router)
 api_router.include_router(analytics.router)

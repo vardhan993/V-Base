@@ -27,7 +27,25 @@ async def global_search(
         result = await session.execute(stmt)
         companies = list(result.scalars().unique().all())
         results["companies"] = [
-            {"id": c.id, "name": c.name, "type": "company", "subtitle": c.city or c.industry or ""} for c in companies
+            {
+                "id": c.id,
+                "name": c.name,
+                "type": "company",
+                "subtitle": c.city or c.industry or "",
+                "fields": {
+                    "name": c.name,
+                    "domain": c.domain,
+                    "website": c.website,
+                    "industry": c.industry,
+                    "headcount": c.employee_count,
+                    "size": c.company_size,
+                    "city": c.city,
+                    "country": c.country,
+                    "linkedin_url": c.linkedin_url,
+                    "technologies": ", ".join(c.technologies or []),
+                },
+            }
+            for c in companies
         ]
         results["total"] += len(companies)
 
@@ -37,7 +55,24 @@ async def global_search(
         result = await session.execute(stmt)
         contacts = list(result.scalars().unique().all())
         results["contacts"] = [
-            {"id": c.id, "name": c.display_name, "type": "contact", "subtitle": c.job_title or c.company_name or ""}
+            {
+                "id": c.id,
+                "name": c.display_name,
+                "type": "contact",
+                "subtitle": c.job_title or c.company_name or "",
+                "fields": {
+                    "first_name": c.first_name,
+                    "last_name": c.last_name,
+                    "full_name": c.full_name,
+                    "job_title": c.job_title,
+                    "department": c.department,
+                    "seniority": c.seniority,
+                    "email": c.email,
+                    "phone": c.phone,
+                    "linkedin_url": c.linkedin_url,
+                    "company_name": c.company_name,
+                },
+            }
             for c in contacts
         ]
         results["total"] += len(contacts)

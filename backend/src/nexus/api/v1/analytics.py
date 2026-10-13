@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.api.deps import get_current_user
 from nexus.core.db import get_session
-from nexus.database import ActivityLog, Company, Contact, ImportJob
+from nexus.database import CRM_STAGES, ActivityLog, Company, Contact, FollowUpTask, ImportJob
 
 router = APIRouter(tags=["analytics"])
 
@@ -55,6 +55,33 @@ async def analytics_overview(session: AsyncSession = Depends(get_session), curre
         "verified_emails": verified_email,
         "records_needing_review": needs_review,
     }
+
+
+@router.get("/analytics/pipeline")
+async def pipeline_summary(session: AsyncSession = Depends(get_session), current_user=Depends(get_current_user)):
+    """Contacts per CRM stage plus open/overdue follow-up counts for the Pipeline page."""
+    rows = (
+        await session.execute(
+            select(Contact.stage, func.count(Contact.id))
+            .where(Contact.is_archived.is_(False))
+            .group_by(Contact.stage)
+        )
+    ).fetchall()
+    counts = {r[0]: r[1] for r in rows}
+    stages = [{"stage": s, "count": counts.get(s, 0)} for s in CRM_STAGES]
+    open_tasks = (
+        await session.execute(select(func.count(FollowUpTask.id)).where(FollowUpTask.done.is_(False)))
+    ).scalar() or 0
+    overdue_tasks = (
+        await session.execute(
+            select(func.count(FollowUpTask.id)).where(
+                FollowUpTask.done.is_(False),
+                FollowUpTask.due_at.isnot(None),
+                FollowUpTask.due_at < utcnow(),
+            )
+        )
+    ).scalar() or 0
+    return {"stages": stages, "open_tasks": open_tasks, "overdue_tasks": overdue_tasks}
 
 
 async def session_execute_count(session: AsyncSession, model, *predicates) -> int:

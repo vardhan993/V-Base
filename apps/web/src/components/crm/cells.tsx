@@ -1,0 +1,60 @@
+import { IconPhone } from "@/lib/icons";
+import { stageTone, parsePhone } from "@/lib/crm";
+
+/** Text that never overlaps its neighbours: constrained width, ellipsis,
+ *  full value on hover. `title` defaults to the text itself. */
+export function ClippedText({
+  children,
+  title,
+  maxWidth = "max-w-[200px]",
+  className = "",
+}: {
+  children: React.ReactNode;
+  title?: string;
+  maxWidth?: string;
+  className?: string;
+}) {
+  const text = title ?? (typeof children === "string" ? children : undefined);
+  return (
+    <span className={`block truncate ${maxWidth} ${className}`} title={text}>
+      {children}
+    </span>
+  );
+}
+
+export function StageBadge({ stage }: { stage?: string | null }) {
+  const label = stage || "New";
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${stageTone(label)}`}
+      title={`Pipeline stage: ${label}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+/** Phone number with a country-code indicator. Numbers without an explicit
+ *  international prefix get an amber "no code" marker pointing at Data
+ *  Quality instead of a guessed prefix. */
+export function PhoneCell({ phone, maxWidth = "max-w-[160px]" }: { phone?: string | null; maxWidth?: string }) {
+  if (!phone) return <span className="text-sm text-[var(--vbase-slate400)]">—</span>;
+  const parsed = parsePhone(phone);
+  const display = parsed?.display ?? phone;
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-sm text-[var(--vbase-slate800)]">
+      <IconPhone className="h-3.5 w-3.5 flex-shrink-0 text-[var(--vbase-slate500)]" />
+      <span className={`block truncate ${maxWidth}`} title={display}>
+        {display}
+      </span>
+      {parsed && !parsed.hasCountryCode && (
+        <span
+          className="flex-shrink-0 rounded-full bg-[var(--vbase-amber)]/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--vbase-amber)]"
+          title="No country code — see Data Quality"
+        >
+          no code
+        </span>
+      )}
+    </span>
+  );
+}

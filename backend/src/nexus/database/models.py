@@ -299,6 +299,10 @@ class Contact(SearchableMixin, Base):
     email_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     phone_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    #: CRM pipeline stage: New, Contacted, Qualified, Proposal, Customer, Lost.
+    #: Free text at the database level so future stages need no migration;
+    #: the API validates against CRM_STAGES.
+    stage: Mapped[str] = mapped_column(String(50), nullable=False, default="New", server_default=text("'New'"), index=True)
     linkedin_url: Mapped[str | None] = mapped_column(String(500), nullable=True, index=True)
     company_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
     city: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
@@ -413,6 +417,45 @@ class EmploymentHistory(Base):
     source: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime.datetime] = _created_at_column()
     updated_at: Mapped[datetime.datetime] = _updated_at_column()
+
+
+#: CRM pipeline stages, in funnel order. Stored as plain text on contacts so
+#: renaming is cheap; the API rejects anything outside this vocabulary.
+CRM_STAGES: tuple[str, ...] = ("New", "Contacted", "Qualified", "Proposal", "Customer", "Lost")
+
+
+class FollowUpTask(Base):
+    """A CRM follow-up: call back, send proposal, schedule demo…
+
+    Optionally linked to one contact and/or one company. Deleting the linked
+    record detaches the task (SET NULL) instead of destroying the reminder.
+    """
+
+    __tablename__ = "follow_up_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contact_id: Mapped[int | None] = mapped_column(
+        ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    company_id: Mapped[int | None] = mapped_column(
+        ForeignKey("companies.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    due_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    done: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False, index=True)
+    done_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime.datetime] = _created_at_column()
+    updated_at: Mapped[datetime.datetime] = _updated_at_column()
+
+    __table_args__ = (
+        CheckConstraint("length(btrim(title)) > 0", name="ck_follow_up_tasks_title_not_blank"),
+        Index("ix_follow_up_tasks_open_due", "done", "due_at"),
+    )
+
+    contact: Mapped[Contact | None] = relationship("Contact", lazy="selectin")
+    company: Mapped[Company | None] = relationship("Company", lazy="selectin")
 
 
 class Tag(Base):
@@ -804,6 +847,7 @@ SNAPSHOT_TABLES: tuple[str, ...] = (
     "import_errors",
     "duplicate_candidates",
     "verification_events",
+    "follow_up_tasks",
     "activity_logs",
     "audit_logs",
     "custom_fields",

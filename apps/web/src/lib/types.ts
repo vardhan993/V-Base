@@ -52,6 +52,7 @@ export interface Contact {
   email_status?: string | null;
   phone?: string | null;
   phone_status?: string | null;
+  stage?: string;
   linkedin_url?: string | null;
   company_name?: string | null;
   city?: string | null;
@@ -142,6 +143,7 @@ export interface QualitySummary {
     with_linkedin: number;
     with_company: number;
     invalid_email: number;
+    phone_missing_country_code: number;
     missing_job_title: number;
     missing_phone: number;
     missing_linkedin: number;

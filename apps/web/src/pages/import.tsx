@@ -117,6 +117,14 @@ interface ProgressResult {
   error_summary: string | null;
 }
 
+interface CustomFieldDef {
+  id: number;
+  entity_type: string;
+  name: string;
+  key: string;
+  field_type: string;
+}
+
 type Step = "upload" | "preview" | "mapping" | "review" | "running" | "done" | "history";
 
 const STEPS: { id: Step; label: string }[] = [
@@ -169,12 +177,17 @@ export function ImportPage() {
   const [plan, setPlan] = useState<PlanResult | null>(null);
   const [result, setResult] = useState<JobSummary | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [customFields, setCustomFields] = useState<CustomFieldDef[]>([]);
 
   useEffect(() => {
     api
       .get<ImportOptions>("/import/options")
       .then(setOptions)
       .catch(() => toast("Could not load import options", "error"));
+    api
+      .get<CustomFieldDef[]>("/custom-fields")
+      .then(setCustomFields)
+      .catch(() => {});
   }, []);
 
   const reset = useCallback(() => {
@@ -236,6 +249,13 @@ export function ImportPage() {
     const usable = Object.fromEntries(Object.entries(mapping).filter(([, v]) => v));
     if (!Object.keys(usable).length) {
       toast("Map at least one column before continuing", "error");
+      return;
+    }
+    const unnamedCustom = Object.entries(usable).filter(
+      ([, v]) => v === "custom:contact:" || v === "custom:company:"
+    );
+    if (unnamedCustom.length) {
+      toast("Name every custom field before continuing", "error");
       return;
     }
     const duplicates = Object.entries(usable)
@@ -370,6 +390,7 @@ export function ImportPage() {
         <MappingStep
           preview={preview}
           options={options}
+          customFields={customFields}
           mapping={mapping}
           setMapping={setMapping}
           strategy={strategy}
@@ -673,6 +694,7 @@ function PreviewStep({
 function MappingStep({
   preview,
   options,
+  customFields,
   mapping,
   setMapping,
   strategy,
@@ -687,6 +709,7 @@ function MappingStep({
 }: {
   preview: PreviewResult;
   options: ImportOptions;
+  customFields: CustomFieldDef[];
   mapping: Record<string, string>;
   setMapping: (m: Record<string, string>) => void;
   strategy: string;
@@ -725,7 +748,8 @@ function MappingStep({
           <div>
             <h3 className="font-semibold text-[var(--vbase-slate800)]">Column mapping</h3>
             <p className="mt-0.5 text-sm text-[var(--vbase-slate500)]">
-              Suggested automatically from the headers. Unmapped columns are ignored.
+              Suggested automatically from the headers. Unmapped columns are ignored — or send any number of
+              extra columns to custom fields instead.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -754,43 +778,16 @@ function MappingStep({
 
         <div className="mt-4 max-h-[420px] space-y-2 overflow-auto pr-1">
           {preview.columns.map((col) => (
-            <div
+            <MappingRow
               key={col}
-              className={`flex items-center gap-3 rounded-md border px-3 py-2 ${
-                mapping[col]
-                  ? "border-[var(--vbase-border)] bg-[var(--vbase-bg)]"
-                  : "border-dashed border-[var(--vbase-border)] bg-[var(--vbase-bg-alt)]"
-              }`}
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-[var(--vbase-slate800)]">{col}</p>
-                <p className="truncate text-xs text-[var(--vbase-slate500)]">
-                  {sample(col) ? `e.g. ${sample(col)}` : "no sample value"}
-                </p>
-              </div>
-              <IconArrowRight className="h-4 w-4 flex-shrink-0 text-[var(--vbase-slate300)]" />
-              <select
-                value={mapping[col] || ""}
-                onChange={(e) => setMapping({ ...mapping, [col]: e.target.value })}
-                className={`vbase-select w-60 ${mapping[col] ? "" : "text-[var(--vbase-slate400)]"}`}
-              >
-                <option value="">— ignore this column —</option>
-                <optgroup label="Company">
-                  {companyFields.map((f) => (
-                    <option key={f} value={f}>
-                      {humanize(f)}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Contact / person">
-                  {contactFields.map((f) => (
-                    <option key={f} value={f}>
-                      {humanize(f)}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-            </div>
+              col={col}
+              sample={sample(col)}
+              target={mapping[col] || ""}
+              companyFields={companyFields}
+              contactFields={contactFields}
+              customFields={customFields}
+              onChange={(value) => setMapping({ ...mapping, [col]: value })}
+            />
           ))}
         </div>
 
@@ -915,6 +912,101 @@ function MappingStep({
           )}
           <span>Preview changes (dry run)</span>
         </button>
+      </div>
+    </div>
+  );
+}
+
+function MappingRow({
+  col,
+  sample,
+  target,
+  companyFields,
+  contactFields,
+  customFields,
+  onChange,
+}: {
+  col: string;
+  sample: string;
+  target: string;
+  companyFields: string[];
+  contactFields: string[];
+  customFields: CustomFieldDef[];
+  onChange: (value: string) => void;
+}) {
+  const customMatch = target.startsWith("custom:") ? target.split(":", 3) : null;
+  const customEntity = customMatch && customMatch.length === 3 ? customMatch[1] : null;
+  const customName = customMatch && customMatch.length === 3 ? customMatch[2] : "";
+  // The select shows the "new custom field" placeholder while a name is being
+  // typed; the stored mapping always carries the full custom:entity:name form.
+  const selectValue =
+    customMatch && (customName === "" || !customFields.some((f) => `custom:${f.entity_type}:${f.name}` === target))
+      ? `custom:${customEntity}:`
+      : target;
+  const contactCustom = customFields.filter((f) => f.entity_type === "contact");
+  const companyCustom = customFields.filter((f) => f.entity_type === "company");
+
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-md border px-3 py-2 ${
+        target
+          ? "border-[var(--vbase-border)] bg-[var(--vbase-bg)]"
+          : "border-dashed border-[var(--vbase-border)] bg-[var(--vbase-bg-alt)]"
+      }`}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-[var(--vbase-slate800)]" title={col}>{col}</p>
+        <p className="truncate text-xs text-[var(--vbase-slate500)]" title={sample}>
+          {sample ? `e.g. ${sample}` : "no sample value"}
+        </p>
+      </div>
+      <IconArrowRight className="h-4 w-4 flex-shrink-0 text-[var(--vbase-slate300)]" />
+      <div className="flex w-60 flex-shrink-0 flex-col gap-1.5">
+        <select
+          value={selectValue}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label={`Map column ${col}`}
+          className={`vbase-select w-full ${target ? "" : "text-[var(--vbase-slate400)]"}`}
+        >
+          <option value="">— ignore this column —</option>
+          <optgroup label="Company">
+            {companyFields.map((f) => (
+              <option key={f} value={f}>
+                {humanize(f)}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Contact / person">
+            {contactFields.map((f) => (
+              <option key={f} value={f}>
+                {humanize(f)}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Custom fields">
+            {contactCustom.map((f) => (
+              <option key={`contact-${f.id}`} value={`custom:contact:${f.name}`}>
+                {f.name} (contact)
+              </option>
+            ))}
+            {companyCustom.map((f) => (
+              <option key={`company-${f.id}`} value={`custom:company:${f.name}`}>
+                {f.name} (company)
+              </option>
+            ))}
+            <option value="custom:contact:">＋ New contact field…</option>
+            <option value="custom:company:">＋ New company field…</option>
+          </optgroup>
+        </select>
+        {customEntity && selectValue === `custom:${customEntity}:` && (
+          <input
+            value={customName}
+            onChange={(e) => onChange(`custom:${customEntity}:${e.target.value}`)}
+            placeholder={`New ${customEntity} field name…`}
+            aria-label={`New ${customEntity} field name for column ${col}`}
+            className="vbase-input h-8 text-sm"
+          />
+        )}
       </div>
     </div>
   );

@@ -999,21 +999,45 @@ def _clamp(payload: dict[str, Any], model: Any) -> tuple[dict[str, Any], int]:
     return out, shortened
 
 
+def _has_value(target: Any, key: str, value: Any) -> bool:
+    """True when ``target`` already holds a meaningful value for ``key``.
+
+    ``None`` entries are never written, so it is also what keeps a source
+    file that simply does not carry a column from erasing it.
+
+    ``value`` is passed in so empty strings and empty lists are treated as
+    missing too, not as present values that should overwrite the target.
+    """
+    current = getattr(target, key, None)
+    if current is None:
+        return False
+    if current == "" or current == []:
+        return False
+    if isinstance(current, str) and current.strip() == "":
+        return False
+    if isinstance(value, str) and value.strip() == "":
+        return False
+    return True
+
+
 def _merge(target: Any, payload: dict[str, Any], overwrite: bool) -> bool:
     """Fill empty fields on ``target``; replace them only with ``overwrite``.
 
-    A source file that only knows a company's name must never blank out a
-    website another file supplied, so ``None`` is never written either way.
+    Explicit, not implicit: a value is written only when a payload column is
+    present. An earlier file's website must never be blanked by a later
+    person-only file that drops it, and a re-run of the same file must never
+    silently overwrite what it already wrote.
+
+    ``overwrite=True`` replaces every populated field, like a full re-import.
     """
     changed = False
     for key, value in payload.items():
         if value is None:
             continue
-        current = getattr(target, key, None)
-        if current is None or current == "" or current == []:
+        if not _has_value(target, key, value):
             setattr(target, key, value)
             changed = True
-        elif overwrite and current != value:
+        elif overwrite:
             setattr(target, key, value)
             changed = True
     return changed
@@ -1036,6 +1060,8 @@ async def _upsert_company(
         company.data_quality_score = _company_quality(payload)
         session.add(company)
         report.created += 1
+    if overwrite:
+        report.updated += 1
     elif _merge(company, payload, overwrite):
         report.updated += 1
     else:

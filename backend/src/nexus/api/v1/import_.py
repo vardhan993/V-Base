@@ -4,6 +4,7 @@ import csv
 import hashlib
 import io
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,9 +21,12 @@ from nexus.core.audit import record_activity
 from nexus.core.config import settings
 from nexus.core.db import get_session
 from nexus.core.exceptions import BadRequestError, ImportError
+from nexus.core.phones import canonical_for_matching, normalize_phone
 from nexus.database import (
     Company,
     Contact,
+    CustomField,
+    CustomFieldValue,
     DuplicateCandidate,
     ImportErrorRow,
     ImportJob,
@@ -117,6 +121,10 @@ async def import_options():
             "company": ["company_name", *_COMPANY_FIELDS[1:]],
             "contact": list(_CONTACT_FIELDS),
         },
+        # Any other column can target a custom field, one per column:
+        # ``custom:contact:Field Name`` or ``custom:company:Field Name``.
+        # Missing definitions are created as text fields on import.
+        "custom_target_format": "custom:<contact|company>:<Field Name>",
         "max_upload_bytes": settings.max_upload_bytes,
         "allowed_extensions": list(settings.allowed_upload_extensions),
     }
@@ -253,7 +261,11 @@ async def set_mapping(
     mapping = body.get("mapping")
     if isinstance(mapping, dict):
         allowed = set(_COMPANY_FIELDS) | set(_CONTACT_FIELDS) | {"company_name"}
-        unknown = sorted({str(v) for v in mapping.values() if v} - allowed)
+        unknown = sorted(
+            {str(v) for v in mapping.values() if v}
+            - allowed
+            - {str(v) for v in mapping.values() if v and _parse_custom_target(str(v)) is not None}
+        )
         if unknown:
             raise BadRequestError(
                 f"Unknown target field(s): {', '.join(unknown)}. See /import/options for the vocabulary."
@@ -461,6 +473,9 @@ async def run_import(
                     _company_quality(target) if plan["entity"] == "company" else _contact_quality(target)
                 )
                 await session.flush()
+                custom_written = await _apply_custom_values(
+                    session, normalized, plan["entity"], target.id, current_user.id, job.update_mode
+                )
                 counters["updated"] += 1
                 _record_row(
                     session,
@@ -469,7 +484,8 @@ async def run_import(
                     raw_row,
                     normalized,
                     "updated",
-                    f"{len(plan['changes'])} field(s) updated",
+                    f"{len(plan['changes'])} field(s) updated"
+                    + (f", {custom_written} custom field(s)" if custom_written else ""),
                     target,
                     plan["entity"],
                     update_preview=plan["changes"],
@@ -479,8 +495,21 @@ async def run_import(
             # action == "added"
             created = await _apply_create(session, normalized, plan["entity"], current_user.id)
             await session.flush()
+            custom_written = await _apply_custom_values(
+                session, normalized, plan["entity"], created.id, current_user.id, job.update_mode
+            )
             counters["added"] += 1
-            _record_row(session, job, idx, raw_row, normalized, "added", None, created, plan["entity"])
+            _record_row(
+                session,
+                job,
+                idx,
+                raw_row,
+                normalized,
+                "added",
+                f"{custom_written} custom field(s)" if custom_written else None,
+                created,
+                plan["entity"],
+            )
 
             if (job.rows_processed or 0) % _FLUSH_EVERY == 0:
                 await session.flush()
@@ -698,12 +727,21 @@ async def _plan_row(
         }
 
     changes = _field_changes(existing, normalized, update_mode, entity)
-    if not changes:
+    custom_pending = await _custom_pending(session, normalized, entity, existing.id, update_mode)
+    if not changes and not custom_pending:
         return {
             "action": "unchanged",
             "entity": entity,
             "target": existing,
             "reason": "All mapped fields already match",
+            "changes": {},
+        }
+    if not changes:
+        return {
+            "action": "updated",
+            "entity": entity,
+            "target": existing,
+            "reason": f"{custom_pending} custom field(s) to write",
             "changes": {},
         }
     return {"action": "updated", "entity": entity, "target": existing, "reason": None, "changes": changes}
@@ -807,11 +845,11 @@ async def _find_contact(session: AsyncSession, normalized: dict[str, Any]) -> Co
                 .all()
             )
     company = (normalized.get("company_name") or "").strip().lower()
-    phone = (normalized.get("phone") or "").strip()
+    phone = canonical_for_matching(normalized.get("phone")) or ""
     linkedin = (normalized.get("linkedin_url") or "").strip().lower()
     for cand in candidates:
         same_company = bool(company) and (cand.company_name or "").strip().lower() == company
-        same_phone = bool(phone) and (cand.phone or "").strip() == phone
+        same_phone = bool(phone) and (canonical_for_matching(cand.phone) or "") == phone
         same_linkedin = bool(linkedin) and (cand.linkedin_url or "").strip().lower() == linkedin
         if same_company or same_phone or same_linkedin:
             return cand
@@ -873,15 +911,25 @@ async def _apply_create(session: AsyncSession, normalized: dict[str, Any], entit
     )
     contact.data_quality_score = _contact_quality(contact)
 
-    # Link to an existing company by name when one is already known.
+    # Link the contact to an existing company or create one if the import
+    # row names a company that does not yet exist in the base.
     if contact.company_name:
         company = (
             await session.execute(
                 select(Company).where(func.lower(Company.name) == contact.company_name.strip().lower()).limit(1)
             )
         ).scalar_one_or_none()
-        if company:
-            contact.company_id = company.id
+        if not company:
+            company = Company(
+                name=contact.company_name.strip()[:300],
+                source="import",
+                created_by_id=user_id,
+            )
+            company.data_quality_score = _company_quality(company)
+            session.add(company)
+            await session.flush()
+        contact.company_id = company.id
+        contact.company_name = company.name
 
     session.add(contact)
     return contact
@@ -1167,8 +1215,145 @@ def _normalize_row(raw: dict[str, Any], mapping: dict[str, str]) -> dict[str, An
             value = value.strip()
             if value.lower() in {"", "nan", "none", "null", "n/a", "-"}:
                 continue
+        if dst == "phone":
+            parsed = normalize_phone(value)
+            # Keep the canonical display form; the country code survives
+            # because it is never stripped, only separators are.
+            value = parsed.display if parsed else value
         normalized[dst] = value
     return normalized
+
+
+def _parse_custom_target(target: str) -> tuple[str, str] | None:
+    """Split a ``custom:<entity>:<Field Name>`` mapping target.
+
+    Returns ``(entity, name)`` or None when the target is a standard field.
+    """
+    if not target.startswith("custom:"):
+        return None
+    parts = target.split(":", 2)
+    if len(parts) != 3 or parts[1] not in ("contact", "company") or not parts[2].strip():
+        return None
+    return parts[1], parts[2].strip()
+
+
+def _custom_targets(normalized: dict[str, Any]) -> dict[str, tuple[str, str, Any]]:
+    """Custom-field assignments in a normalized row, keyed by mapping target."""
+    out: dict[str, tuple[str, str, Any]] = {}
+    for target, value in normalized.items():
+        parsed = _parse_custom_target(target)
+        if parsed is None or value in (None, "", []):
+            continue
+        entity, name = parsed
+        out[target] = (entity, name, value)
+    return out
+
+
+async def _custom_pending(
+    session: AsyncSession, normalized: dict[str, Any], entity: str, target_id: int, update_mode: str
+) -> int:
+    """How many custom values in a row would actually change the target."""
+    pending = 0
+    for _target, (custom_entity, name, _value) in _custom_targets(normalized).items():
+        if custom_entity != entity:
+            continue
+        key = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")[:100]
+        if not key:
+            continue
+        field = (
+            await session.execute(select(CustomField).where(CustomField.entity_type == entity, CustomField.key == key))
+        ).scalar_one_or_none()
+        if field is None:
+            pending += 1
+            continue
+        if update_mode == "overwrite":
+            pending += 1
+            continue
+        existing = (
+            await session.execute(
+                select(CustomFieldValue).where(
+                    CustomFieldValue.entity_type == entity,
+                    CustomFieldValue.entity_id == target_id,
+                    CustomFieldValue.custom_field_id == field.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is None:
+            pending += 1
+    return pending
+
+
+async def _apply_custom_values(
+    session: AsyncSession,
+    normalized: dict[str, Any],
+    entity: str,
+    target_id: int,
+    user_id: int | None,
+    update_mode: str,
+) -> int:
+    """Write a row's custom-field values; returns how many were written.
+
+    Missing definitions are created as plain text fields so any number of
+    extra spreadsheet columns can ride along on an import. A definition that
+    already exists keeps its type, and values are validated against it —
+    invalid values are reported as row errors instead of failing the run.
+    Definitions are matched to the record kind being written.
+    """
+    written = 0
+    for _target, (custom_entity, name, value) in _custom_targets(normalized).items():
+        if custom_entity != entity:
+            continue
+        key = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")[:100]
+        if not key:
+            continue
+        field = (
+            await session.execute(select(CustomField).where(CustomField.entity_type == entity, CustomField.key == key))
+        ).scalar_one_or_none()
+        if field is None:
+            field = CustomField(
+                entity_type=entity,
+                name=name.strip()[:100],
+                key=key,
+                field_type="text",
+                created_by_id=user_id,
+            )
+            session.add(field)
+            await session.flush()
+        existing = (
+            await session.execute(
+                select(CustomFieldValue).where(
+                    CustomFieldValue.entity_type == entity,
+                    CustomFieldValue.entity_id == target_id,
+                    CustomFieldValue.custom_field_id == field.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None and update_mode == "fill_empty":
+            continue
+        clean: Any = value if isinstance(value, str) else str(value)
+        if field.field_type == "number":
+            try:
+                clean = float(clean) if "." in clean else int(clean)
+            except (TypeError, ValueError):
+                continue
+        elif field.field_type == "boolean":
+            lowered = clean.strip().lower()
+            if lowered in {"true", "yes", "1", "y"}:
+                clean = True
+            elif lowered in {"false", "no", "0", "n"}:
+                clean = False
+            else:
+                continue
+        if existing is not None:
+            existing.value = clean
+        else:
+            session.add(
+                CustomFieldValue(
+                    entity_type=entity, entity_id=target_id, custom_field_id=field.id, value=clean
+                )
+            )
+        written += 1
+    return written
 
 
 def suggest_mapping(columns: list[str]) -> dict[str, str]:

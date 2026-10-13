@@ -329,4 +329,4 @@ def test_backup_snapshot_excludes_session_tokens(auth_client):
     assert "sessions" not in payload["tables"]
     assert "users" in payload["tables"]
     assert payload["engine"] == "postgresql"
-    assert payload["schema_version"] == "0001_initial"
+    assert payload["schema_version"] == "0002_crm_stage_tasks"

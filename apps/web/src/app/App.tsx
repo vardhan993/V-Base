@@ -11,6 +11,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { LoginPage } from "@/pages/login";
 import { SignupPage } from "@/pages/signup";
 import { DashboardPage } from "@/pages/dashboard";
+import { PipelinePage } from "@/pages/pipeline";
+import { TasksPage } from "@/pages/tasks";
 import { CompaniesPage } from "@/pages/companies";
 import { CompanyDetailPage } from "@/pages/company";
 import { ContactPage } from "@/pages/contacts";
@@ -88,6 +90,8 @@ function AppShell() {
             <Route element={<AuthLoader><Layout /></AuthLoader>}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/pipeline" element={<PipelinePage />} />
+              <Route path="/tasks" element={<TasksPage />} />
               <Route path="/companies" element={<CompaniesPage />} />
               <Route path="/companies/:id" element={<CompanyDetailPage />} />
               <Route path="/contacts" element={<ContactPage />} />

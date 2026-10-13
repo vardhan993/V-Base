@@ -1,4 +1,5 @@
 from nexus.database.models import (
+    CRM_STAGES,
     SNAPSHOT_TABLES,
     ActivityLog,
     AuditLog,
@@ -15,6 +16,7 @@ from nexus.database.models import (
     CustomFieldValue,
     DuplicateCandidate,
     EmploymentHistory,
+    FollowUpTask,
     ImportErrorRow,
     ImportJob,
     ImportRow,
@@ -52,6 +54,8 @@ __all__ = [
     "ImportErrorRow",
     "DuplicateCandidate",
     "VerificationEvent",
+    "FollowUpTask",
+    "CRM_STAGES",
     "ActivityLog",
     "AuditLog",
     "CustomField",

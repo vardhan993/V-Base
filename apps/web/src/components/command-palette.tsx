@@ -15,6 +15,8 @@ interface Command {
 
 const COMMANDS: Command[] = [
   { id: "dashboard", label: "Go to Dashboard", href: "/dashboard", icon: IconActivity, shortcut: "d", section: "Navigation" },
+  { id: "pipeline", label: "Go to Pipeline", href: "/pipeline", icon: IconActivity, shortcut: "g p", section: "Navigation" },
+  { id: "tasks", label: "Go to Follow-ups", href: "/tasks", icon: IconActivity, shortcut: "g t", section: "Navigation" },
   { id: "companies", label: "Go to Companies", href: "/companies", icon: IconBuilding2, shortcut: "g c", section: "Navigation" },
   { id: "contacts", label: "Go to Contacts", href: "/contacts", icon: IconUsers, shortcut: "g o", section: "Navigation" },
   { id: "lists", label: "Go to Lists", href: "/lists", icon: IconHash, shortcut: "g l", section: "Navigation" },

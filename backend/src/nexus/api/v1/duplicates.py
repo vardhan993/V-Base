@@ -602,7 +602,7 @@ async def _candidate_history(session: AsyncSession, candidate: DuplicateCandidat
 
 async def _move_contact_relations(session: AsyncSession, from_id: int, to_id: int) -> None:
     """Re-point child rows at the surviving contact before the duplicate goes."""
-    from nexus.database import ContactTag, ListContact
+    from nexus.database import ContactTag, FollowUpTask, ListContact
 
     for model in (ContactTag, ListContact):
         rows = list((await session.execute(select(model).where(model.contact_id == from_id))).scalars().all())
@@ -623,9 +623,12 @@ async def _move_contact_relations(session: AsyncSession, from_id: int, to_id: in
             else:
                 row.contact_id = to_id
 
+    # Follow-ups move to the survivor so reminders are never orphaned.
+    await session.execute(update(FollowUpTask).where(FollowUpTask.contact_id == from_id).values(contact_id=to_id))
+
 
 async def _move_company_relations(session: AsyncSession, from_id: int, to_id: int) -> None:
-    from nexus.database import CompanyTag, Contact, ListCompany
+    from nexus.database import CompanyTag, Contact, FollowUpTask, ListCompany
 
     rows = list((await session.execute(select(CompanyTag).where(CompanyTag.company_id == from_id))).scalars().all())
     for row in rows:
@@ -653,6 +656,8 @@ async def _move_company_relations(session: AsyncSession, from_id: int, to_id: in
 
     # Contacts that pointed at the duplicate now point at the survivor.
     await session.execute(update(Contact).where(Contact.company_id == from_id).values(company_id=to_id))
+    # So do its follow-ups.
+    await session.execute(update(FollowUpTask).where(FollowUpTask.company_id == from_id).values(company_id=to_id))
 
 
 async def _detach_import_rows(session: AsyncSession, column: str, record_id: int) -> None:

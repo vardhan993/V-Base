@@ -16,6 +16,8 @@ import {
   IconTag,
   IconDatabase,
   IconBracesIcon,
+  IconColumns3,
+  IconListChecks,
   IconSidebarCollapse,
   IconSidebarExpand,
 } from "@/lib/icons";
@@ -26,6 +28,8 @@ export function Sidebar() {
 
   const items = [
     { to: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard, exact: true },
+    { to: "/pipeline", label: "Pipeline", icon: IconColumns3 },
+    { to: "/tasks", label: "Follow-ups", icon: IconListChecks },
     { to: "/companies", label: "Companies", icon: IconBuilding2 },
     { to: "/contacts", label: "Contacts", icon: IconUsers },
     { to: "/all-records", label: "All Records", icon: IconTable2 },

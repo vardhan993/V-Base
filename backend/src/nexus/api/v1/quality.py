@@ -28,6 +28,7 @@ async def quality_summary(session: AsyncSession = Depends(get_session), current_
         await session.execute(select(func.count(Contact.id)).where(Contact.company_id.isnot(None)))
     ).scalar() or 0
     contacts_invalid_email = await _count_invalid_email(session)
+    contacts_phone_no_country_code = await _count_phone_without_country_code(session)
     companies_missing_domain = await _count_missing(session, Company, "domain")
     companies_missing_website = await _count_missing(session, Company, "website")
     companies_missing_linkedin = await _count_missing(session, Company, "linkedin_url")
@@ -45,6 +46,7 @@ async def quality_summary(session: AsyncSession = Depends(get_session), current_
             "with_linkedin": contacts_with_linkedin,
             "with_company": contacts_with_company,
             "invalid_email": contacts_invalid_email,
+            "phone_missing_country_code": contacts_phone_no_country_code,
             "missing_job_title": contacts_missing_job_title,
             "missing_phone": contacts_missing_phone,
             "missing_linkedin": contacts_missing_linkedin,
@@ -64,6 +66,17 @@ async def _count_invalid_email(session: AsyncSession) -> int:
     from sqlalchemy import func
 
     stmt = select(func.count(Contact.id)).where(Contact.email.isnot(None), Contact.email.notlike("%@%"))
+    result = await session.execute(stmt)
+    return result.scalar() or 0
+
+
+async def _count_phone_without_country_code(session: AsyncSession) -> int:
+    """Contacts whose phone has no explicit international prefix.
+
+    A stored number without a leading ``+`` cannot be placed in any country,
+    so it is counted separately from merely missing or malformed numbers.
+    """
+    stmt = select(func.count(Contact.id)).where(Contact.phone.isnot(None), Contact.phone.notlike("+%"))
     result = await session.execute(stmt)
     return result.scalar() or 0
 
@@ -88,6 +101,7 @@ async def contacts_needing_review(
     missing_linkedin: bool = Query(True),
     missing_company: bool = Query(True),
     invalid_email: bool = Query(True),
+    phone_missing_country_code: bool = Query(True),
     low_score: int | None = Query(50, ge=0, le=100),
     stale: bool = Query(True),
     session: AsyncSession = Depends(get_session),
@@ -106,6 +120,8 @@ async def contacts_needing_review(
         conditions.append(Contact.company_id.is_(None))
     if invalid_email:
         conditions.append(and_(Contact.email.isnot(None), Contact.email.notlike("%@%")))
+    if phone_missing_country_code:
+        conditions.append(and_(Contact.phone.isnot(None), Contact.phone.notlike("+%")))
     if low_score is not None:
         conditions.append(Contact.data_quality_score < low_score)
     if stale:

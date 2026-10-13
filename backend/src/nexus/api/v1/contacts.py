@@ -34,6 +34,7 @@ _AUDIT_FIELDS = [
     "email_status",
     "phone",
     "phone_status",
+    "stage",
     "linkedin_url",
     "company_name",
     "company_id",
@@ -63,6 +64,7 @@ async def list_contacts(
     phone_available: bool | None = Query(None),
     seniority: str | None = Query(None, max_length=100),
     department: str | None = Query(None, max_length=150),
+    stage: str | None = Query(None, max_length=50),
     data_quality_min: int | None = Query(None, ge=0, le=100),
     data_quality_max: int | None = Query(None, ge=0, le=100),
     tags: str = Query("", max_length=500),
@@ -116,6 +118,8 @@ async def list_contacts(
         base = base.where(Contact.seniority.ilike(f"%{seniority}%"))
     if department:
         base = base.where(Contact.department.ilike(f"%{department}%"))
+    if stage:
+        base = base.where(Contact.stage == stage)
     if data_quality_min is not None:
         base = base.where(Contact.data_quality_score >= data_quality_min)
     if data_quality_max is not None:
@@ -178,6 +182,7 @@ async def export_contacts(
     country: str = Query("", max_length=100),
     email_status: str | None = Query(None),
     seniority: str | None = Query(None),
+    stage: str | None = Query(None, max_length=50),
     archived: bool | None = Query(None),
     session: AsyncSession = Depends(get_session),
     current_user=Depends(get_current_user),
@@ -199,6 +204,8 @@ async def export_contacts(
         base = base.where(Contact.email_status == email_status)
     if seniority:
         base = base.where(Contact.seniority.ilike(f"%{seniority}%"))
+    if stage:
+        base = base.where(Contact.stage == stage)
     result = await session.execute(base.order_by(Contact.updated_at.desc()))
     contacts = list(result.scalars().unique().all())
     rows = [ContactExportRow.from_db(c) for c in contacts]

@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from nexus.core.phones import normalize_phone
+from nexus.database import CRM_STAGES
 from nexus.schemas.company import CompanyResponse
 
 
@@ -25,6 +27,7 @@ class ContactBase(BaseModel):
     email_status: str | None = Field(None, max_length=50)
     phone: str | None = Field(None, max_length=50)
     phone_status: str | None = Field(None, max_length=50)
+    stage: str = Field("New", max_length=50)
     linkedin_url: str | None = Field(None, max_length=500)
     company_name: str | None = Field(None, max_length=300)
     city: str | None = Field(None, max_length=100)
@@ -39,6 +42,25 @@ class ContactBase(BaseModel):
     @classmethod
     def _coerce_empty_lists(cls, v: Any) -> Any:
         return _coerce_list(v)
+
+    @field_validator("stage", mode="before")
+    @classmethod
+    def _default_stage(cls, v: Any) -> Any:
+        if v in (None, ""):
+            return "New"
+        if v not in CRM_STAGES:
+            raise ValueError(f"stage must be one of: {', '.join(CRM_STAGES)}")
+        return v
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def _normalize_phone(cls, v: Any) -> Any:
+        if v in (None, ""):
+            return v
+        parsed = normalize_phone(v)
+        # Unparseable input is kept as typed (trimmed) so no user data is
+        # destroyed; Data Quality flags it instead of the API rejecting it.
+        return parsed.display if parsed else (v.strip() if isinstance(v, str) else v)
 
 
 class ContactCreate(ContactBase):
@@ -58,6 +80,7 @@ class ContactUpdate(BaseModel):
     email_status: str | None = Field(None, max_length=50)
     phone: str | None = Field(None, max_length=50)
     phone_status: str | None = Field(None, max_length=50)
+    stage: str | None = Field(None, max_length=50)
     linkedin_url: str | None = Field(None, max_length=500)
     company_name: str | None = Field(None, max_length=300)
     city: str | None = Field(None, max_length=100)
@@ -69,6 +92,23 @@ class ContactUpdate(BaseModel):
     company_id: int | None = None
     tags: list[str] | None = None
     last_verified: datetime | None = None
+
+    @field_validator("stage", mode="before")
+    @classmethod
+    def _check_stage(cls, v: Any) -> Any:
+        if v in (None, ""):
+            return v
+        if v not in CRM_STAGES:
+            raise ValueError(f"stage must be one of: {', '.join(CRM_STAGES)}")
+        return v
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def _normalize_phone(cls, v: Any) -> Any:
+        if v in (None, ""):
+            return v
+        parsed = normalize_phone(v)
+        return parsed.display if parsed else (v.strip() if isinstance(v, str) else v)
 
 
 class ContactResponse(BaseModel):
@@ -85,6 +125,7 @@ class ContactResponse(BaseModel):
     email_status: str | None
     phone: str | None
     phone_status: str | None
+    stage: str
     linkedin_url: str | None
     company_name: str | None
     city: str | None
@@ -128,6 +169,7 @@ class ContactExportRow(BaseModel):
     email_status: str | None
     phone: str | None
     phone_status: str | None
+    stage: str | None
     linkedin_url: str | None
     company_name: str | None
     city: str | None
@@ -167,6 +209,7 @@ class ContactExportRow(BaseModel):
             email_status=contact.email_status,
             phone=contact.phone,
             phone_status=contact.phone_status,
+            stage=contact.stage,
             linkedin_url=contact.linkedin_url,
             company_name=contact.company_name,
             city=contact.city,
