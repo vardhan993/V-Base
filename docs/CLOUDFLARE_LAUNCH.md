@@ -27,6 +27,10 @@ Expected free-tier URL shape: `https://vbase.<your-subdomain>.workers.dev`.
      variable before the build runs, and rebuild when the backend URL changes.
 5. Deploy.
 
+   The Workers Builds image defaults to Node.js 24 (22 also preinstalled),
+   which satisfies the lockfile-pinned wrangler (Node >= 22 requirement).
+   If you ever override `NODE_VERSION`, keep it at 22 or higher.
+
 ## B. Runtime variable for the `api` proxy
 
 The Worker routes `/api/*` to `env.API_ORIGIN` ([worker/index.js](../apps/web/worker/index.js)).
