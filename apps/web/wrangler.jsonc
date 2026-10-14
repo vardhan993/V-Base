@@ -1,26 +1,38 @@
+// ---------------------------------------------------------------------------
+// V-Base frontend — Cloudflare Workers SPA + API proxy.
+//
+// The Worker at worker/index.js serves the built React SPA from the assets
+// binding and reverse-proxies /api/* requests to the FastAPI backend configured
+// in the API_ORIGIN Worker variable.
+//
+// Proxying on the same origin is deliberate: the API sets an HttpOnly,
+// SameSite=Lax session cookie and enforces an exact Origin allow-list. Serving
+// the SPA and the API from one origin keeps the cookie first-party, removes CORS
+// entirely, and means FRONTEND_URL on the API is simply this Worker's origin.
+//
+// API_ORIGIN is a plain Worker variable (e.g. https://vbase-api.onrender.com).
+// While it is unset the SPA still loads and /api/* returns a clear 503 instead
+// of a confusing network error.
+//
+// Deploy:
+//   cd apps/web
+//   npm run build
+//   npx wrangler deploy
+//
+// Set API_ORIGIN before deploying for a real backend connection:
+//   wrangler deploy --var API_ORIGIN=https://vbase-api.onrender.com
+// ---------------------------------------------------------------------------
+
 {
-  // ---------------------------------------------------------------------------
-  // V-Base frontend — Cloudflare Workers Static Assets.
-  //
-  // Static-assets-only deployment: there is no Worker script. Cloudflare serves
-  // the built SPA from ./dist and, because the app uses client-side routing with
-  // hashes and history paths, unknown routes fall back to index.html.
-  //
-  // Deploy:
-  //   cd apps/web
-  //   npm run build
-  //   npx wrangler deploy
-  //
-  // The API origin is baked in at build time, so set it before building:
-  //   VITE_API_BASE=https://vbase-api.onrender.com/api/v1   (apps/web/.env)
-  // ---------------------------------------------------------------------------
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "vbase",
   "compatibility_date": "2026-10-01",
+  "main": "./worker/index.js",
+  "vars": {
+    "API_ORIGIN": ""
+  },
   "assets": {
     "directory": "./dist",
-    // Serve index.html for any path that is not a real asset, so a hard refresh
-    // on /companies/42 renders the SPA instead of a 404.
     "not_found_handling": "single-page-application",
     "html_handling": "auto-trailing-slash"
   },
