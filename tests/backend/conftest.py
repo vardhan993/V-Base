@@ -50,6 +50,10 @@ os.environ.setdefault("RATE_LIMIT_WRITE_PER_MINUTE", "2000")
 # drive dispatch through the API instead, so no loop should be running.
 os.environ.setdefault("SEQUENCES_POLL_ENABLED", "false")
 
+# Make the importable database package useful to tests and API code via `from
+# nexus.database import SavedView`, even though some routers lazily import the
+# same symbol.
+
 # Imports write the uploaded spreadsheet to disk and backup tests write
 # snapshots. Point both at a throwaway directory so a test run never leaves
 # files in the repository's uploads/ or backups/ folders.
@@ -92,7 +96,7 @@ def _purge_data() -> None:
     from sqlalchemy.pool import NullPool
 
     from nexus.core.db import build_connect_args
-    from nexus.database import SNAPSHOT_TABLES
+    from nexus.database import SNAPSHOT_TABLES, SavedView
 
     url, connect_args = build_connect_args(TEST_DATABASE_URL)
 
@@ -102,6 +106,7 @@ def _purge_data() -> None:
             async with engine.begin() as conn:
                 for table in reversed(SNAPSHOT_TABLES):
                     await conn.execute(text(f'DELETE FROM "{table}"'))
+                await conn.execute(text(f'DELETE FROM "saved_views"'))
         finally:
             await engine.dispose()
 
