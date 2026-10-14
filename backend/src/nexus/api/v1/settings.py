@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +16,7 @@ from nexus.api.deps import client_ip, get_current_user, require_superuser
 from nexus.core.audit import record_activity
 from nexus.core.config import settings
 from nexus.core.db import get_session
+from nexus.core.pg_binaries import pg_client_env, resolve_pg_binary
 from nexus.database import SNAPSHOT_TABLES, Base, SettingsRow
 
 logger = logging.getLogger(__name__)
@@ -31,8 +31,13 @@ def _stamp() -> str:
     return _utcnow().strftime("%Y%m%d_%H%M%S")
 
 
+def _pg_dump_binary() -> str | None:
+    """Resolved path to ``pg_dump`` (PATH, then standard install dirs)."""
+    return resolve_pg_binary("pg_dump", settings.pg_dump_path)
+
+
 def _pg_dump_available() -> bool:
-    return shutil.which(settings.pg_dump_path) is not None
+    return _pg_dump_binary() is not None
 
 
 def _db_size_bytes() -> int | None:
@@ -89,6 +94,7 @@ async def app_info(session: AsyncSession = Depends(get_session), current_user=De
         "uploads_path": str(settings.uploads_path),
         "backups_path": str(settings.backups_path),
         "pg_dump_available": _pg_dump_available(),
+        "pg_dump_binary": _pg_dump_binary(),
         "last_backup": await _last_backup_date(session),
     }
 
@@ -359,15 +365,14 @@ def _run_pg_dump(dest: Path) -> None:
     """Run pg_dump into ``dest``. Raises on any failure."""
     from sqlalchemy.engine import make_url
 
+    binary = _pg_dump_binary()
+    if binary is None:
+        raise RuntimeError("pg_dump was not found on PATH or in the standard PostgreSQL install locations")
+
     url = make_url(settings.database_url)
-    env = {
-        # Explicitly minimal environment: no shell interpolation of the DSN.
-        "PATH": "/usr/local/bin:/usr/bin:/bin",
-        "PGPASSWORD": url.password or "",
-        "PGSSLMODE": url.query.get("sslmode", "require"),
-    }
+    env = pg_client_env(binary, password=url.password, sslmode=url.query.get("sslmode"))
     cmd = [
-        settings.pg_dump_path,
+        binary,
         "--format=custom",
         "--no-owner",
         "--no-privileges",

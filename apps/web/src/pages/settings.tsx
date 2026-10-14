@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   IconDatabase,
   IconShield,
@@ -17,10 +17,14 @@ import {
   IconHardDrive,
   IconUserPlus,
   IconArrowRight,
+  IconSend,
+  IconMail,
 } from "@/lib/icons";
 import { api } from "@/lib/api";
 import { useAuthStore, useThemeStore, toast } from "@/lib/store";
 import type { ThemeMode } from "@/lib/store";
+import { PROVIDER_LABELS } from "@/components/crm";
+import type { EmailStatus } from "@/components/crm";
 
 // ---------------------------------------------------------------------------
 // Types mirror the FastAPI response models exactly.
@@ -35,6 +39,7 @@ interface AppInfo {
   uploads_path: string;
   backups_path: string;
   pg_dump_available: boolean;
+  pg_dump_binary: string | null;
   last_backup: { created_at?: string; kind?: string; file?: string } | null;
   database: {
     server_version: string | null;
@@ -104,6 +109,22 @@ function deviceLabel(ua: string | null) {
 export function SettingsPage() {
   const [tab, setTab] = useState<TabId>("general");
   const { user, setUser } = useAuthStore();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // The Gmail connect flow ends with a redirect back here. Report the outcome
+  // once, then strip the query so a refresh does not replay the toast.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const outcome = params.get("email");
+    if (!outcome) return;
+    if (outcome === "connected") {
+      toast("Gmail connected — sending is ready", "success");
+    } else {
+      toast(params.get("reason") || "Could not connect the mailbox", "error");
+    }
+    navigate({ pathname: location.pathname }, { replace: true });
+  }, [location.pathname, location.search, navigate]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -194,6 +215,7 @@ function GeneralTab() {
               : "No — falling back to validated JSON snapshots"
           }
         />
+        {info?.pg_dump_binary && <Field label="pg_dump binary" value={info.pg_dump_binary} mono />}
         <Field label="Last backup" value={info?.last_backup?.created_at ? fmtWhen(info.last_backup.created_at) : "Never"} />
         <div className="pt-2">
           <Link to="/backup" className="vbase-btn-secondary inline-flex items-center gap-1.5">
@@ -203,7 +225,162 @@ function GeneralTab() {
           </Link>
         </div>
       </Card>
+
+      <EmailCard />
     </div>
+  );
+}
+
+/** Live status of outbound email, with the exact next step when unconfigured. */
+function EmailCard() {
+  const { user } = useAuthStore();
+  const [status, setStatus] = useState<EmailStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setStatus(await api.get<EmailStatus>("/email/status"));
+    } catch (e: any) {
+      setError(e?.data?.detail || e?.message || "Could not read email status");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const chooseProvider = async (provider: string) => {
+    setBusy(true);
+    try {
+      await api.post("/settings/keys", { key: "email_provider", value: provider });
+      toast(`Email provider set to ${provider}`, "success");
+      await load();
+    } catch (e: any) {
+      toast(e?.data?.detail || e?.message || "Could not change the provider", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async () => {
+    if (!window.confirm("Disconnect the mailbox? Google's permission is not revoked, but V-Base forgets the token.")) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.post("/email/gmail/disconnect");
+      toast("Mailbox disconnected", "success");
+      await load();
+    } catch (e: any) {
+      toast(e?.data?.detail || e?.message || "Could not disconnect", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const credentialSource =
+    status?.credential_source === "environment"
+      ? "From the API environment"
+      : status?.credential_source === "settings"
+      ? "Stored in settings"
+      : "Not set";
+
+  const isGmail = status?.provider === "gmail";
+
+  return (
+    <Card title="Email sending" icon={<IconSend className="h-4 w-4" />}>
+      {loading ? (
+        <p className="flex items-center gap-2 text-sm text-[var(--vbase-slate500)]">
+          <IconLoader2 className="h-4 w-4 animate-spin" />
+          Checking the provider…
+        </p>
+      ) : (
+        <>
+          <div className="flex items-start justify-between gap-4 border-b border-[var(--vbase-border)] py-2.5">
+            <span className="text-xs uppercase tracking-wider text-[var(--vbase-slate500)]">Provider</span>
+            <select
+              value={status?.provider ?? status?.default_provider ?? "resend"}
+              onChange={(e) => chooseProvider(e.target.value)}
+              disabled={busy}
+              aria-label="Email provider"
+              className="vbase-select w-56"
+            >
+              {(status?.supported_providers ?? ["resend"]).map((p) => (
+                <option key={p} value={p}>
+                  {PROVIDER_LABELS[p] ?? p}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Field
+            label="Status"
+            value={status?.configured ? "Ready — sending enabled" : "Not configured"}
+          />
+          <Field label="From address" value={status?.from_email ?? "—"} />
+          <Field label="Credential" value={credentialSource} />
+          {isGmail && <Field label="Mailbox" value={status?.gmail_connected ? "Connected" : "Not connected"} />}
+          <Field
+            label="Delivery tracking"
+            value={
+              status?.webhook_configured
+                ? `Enabled · ${status?.webhook_path ?? ""}`
+                : `Disabled · set EMAIL_WEBHOOK_SECRET and point the provider at ${status?.webhook_path ?? ""}`
+            }
+          />
+
+          {error && <p className="pt-2 text-xs text-[var(--vbase-red)]">{error}</p>}
+
+          {!status?.configured && !error && (
+            <p className="mt-3 flex items-start gap-2 border-t border-[var(--vbase-border)] pt-3 text-xs leading-relaxed text-[var(--vbase-slate500)]">
+              <IconAlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[var(--vbase-amber)]" />
+              <span>
+                Still needed: <span className="font-medium">{status?.missing?.join(", ") || "credentials"}</span>. See
+                the compose dialog on any contact for the exact setup steps, or set{" "}
+                {(isGmail ? status?.gmail_env_vars : status?.env_vars)?.join(", ") || "EMAIL_API_KEY, EMAIL_FROM"} in
+                the API environment.
+              </span>
+            </p>
+          )}
+
+          {isGmail && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--vbase-border)] pt-3">
+              {status?.gmail_connected ? (
+                <button
+                  onClick={disconnect}
+                  disabled={busy || !user?.is_superuser}
+                  className="vbase-btn-secondary flex items-center gap-1.5 text-sm"
+                >
+                  {busy ? <IconLoader2 className="h-4 w-4 animate-spin" /> : <IconX className="h-4 w-4" />}
+                  <span>Disconnect mailbox</span>
+                </button>
+              ) : (
+                <a
+                  href={status?.gmail_connect_url ?? "/api/v1/email/gmail/authorize"}
+                  className={`vbase-btn-primary flex items-center gap-1.5 text-sm ${
+                    user?.is_superuser ? "" : "pointer-events-none opacity-55"
+                  }`}
+                  aria-disabled={!user?.is_superuser}
+                >
+                  <IconMail className="h-4 w-4" />
+                  <span>Connect Gmail</span>
+                </a>
+              )}
+              {!user?.is_superuser && (
+                <span className="text-xs text-[var(--vbase-slate500)]">
+                  An administrator has to authorise the mailbox.
+                </span>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
 
@@ -672,7 +849,7 @@ function UsersTab({ currentUserId }: { currentUserId?: number }) {
                         <button
                           onClick={() => act(row, row.is_active ? "deactivate" : "restore")}
                           disabled={row.id === currentUserId}
-                          className={`text-xs ${row.is_active ? "vbase-btn-danger" : "vbase-btn-secondary"}`}
+                          className={`vbase-btn text-xs ${row.is_active ? "vbase-btn-danger" : "vbase-btn-secondary"}`}
                         >
                           {row.is_active ? "Disable" : "Restore"}
                         </button>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { IconPlus, IconSearch, IconDownload, IconX, IconUsers, IconBuilding2, IconMail, IconLink, IconRefreshCcw, IconArchive, IconTrash2 } from "@/lib/icons";
 import { api } from "@/lib/api";
 import { Contact } from "@/lib/types";
@@ -9,12 +9,15 @@ import { CRM_STAGES } from "@/lib/crm";
 import { toast } from "@/lib/store";
 
 export function ContactPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  // Deep links (topbar search, command palette) arrive as #/contacts?search=…
+  const [search, setSearch] = useState(() => new URLSearchParams(location.search).get("search")?.trim() ?? "");
   const [filters, setFilters] = useState<ContactFilters>({});
   const [sort] = useState<{ field: string; order: string }>({ field: "updated_at", order: "desc" });
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -41,6 +44,13 @@ export function ContactPage() {
   useEffect(() => {
     setSelected(new Set());
   }, [page, search, filters]);
+
+  // Keep the list in step with the URL: a search issued while this page is
+  // already mounted (command palette, browser back) must still apply.
+  useEffect(() => {
+    const q = new URLSearchParams(location.search).get("search")?.trim() ?? "";
+    if (q) setSearch(q);
+  }, [location.search]);
 
   const toggleSelect = (id: number) => {
     setSelected((prev) => {
@@ -115,16 +125,10 @@ export function ContactPage() {
             <IconDownload className="h-4 w-4" />
             <span>Export CSV</span>
           </button>
-          <button
-            onClick={() => {
-              window.location.hash = "/import";
-              toast("Use Import Center to add contacts from CSV/XLSX", "success");
-            }}
-            className="vbase-btn-primary flex items-center gap-1.5"
-          >
+          <Link to="/contacts/new" className="vbase-btn-primary flex items-center gap-1.5">
             <IconPlus className="h-4 w-4" />
             <span>Add contact</span>
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -159,9 +163,7 @@ export function ContactPage() {
               title="No contacts yet"
               description="Import a CSV or spreadsheet to start building your contact base."
               actionLabel="Add contact"
-              onAction={() => {
-                window.location.hash = "/import";
-              }}
+              onAction={() => navigate("/contacts/new")}
             />
           </div>
         ) : (
@@ -223,6 +225,7 @@ export function ContactPage() {
                       selected={selected.has(contact.id)}
                       onToggleSelect={() => toggleSelect(contact.id)}
                       onChanged={fetchList}
+                      onEdit={() => navigate(`/contacts/${contact.id}/edit`)}
                     />
                   ))}
                 </tbody>
@@ -252,11 +255,13 @@ function ContactRow({
   selected,
   onToggleSelect,
   onChanged,
+  onEdit,
 }: {
   contact: Contact;
   selected: boolean;
   onToggleSelect: () => void;
   onChanged: () => void;
+  onEdit: () => void;
 }) {
   const name = contact.display_name || contact.full_name || contact.email || "Contact";
   const companyName = contact.company?.name || contact.company_name || null;
@@ -347,7 +352,10 @@ function ContactRow({
       </td>
       <td className="px-3 py-3">
         <EntityActions
+          entityType="contact"
+          name={name}
           archived={contact.is_archived}
+          onEdit={onEdit}
           onArchive={async () => {
             await archiveContact(contact.id);
             onChanged();

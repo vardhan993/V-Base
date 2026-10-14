@@ -399,14 +399,16 @@ export function TagsPage() {
                   <button
                     onClick={() => openEdit(tag)}
                     aria-label={`Edit ${tag.name}`}
-                    className="rounded p-1.5 text-[var(--vbase-slate500)] hover:bg-[var(--vbase-bg-alt)] hover:text-[var(--vbase-slate800)]"
+                    title={`Edit ${tag.name}`}
+                    className="vbase-btn vbase-btn-icon-sm vbase-btn-ghost"
                   >
                     <IconEdit className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => setConfirmDelete(tag)}
                     aria-label={`Delete ${tag.name}`}
-                    className="rounded p-1.5 text-[var(--vbase-slate500)] hover:bg-[var(--vbase-red)]/10 hover:text-[var(--vbase-red)]"
+                    title={`Delete ${tag.name}`}
+                    className="vbase-btn vbase-btn-icon-sm vbase-btn-danger-soft"
                   >
                     <IconTrash2 className="h-4 w-4" />
                   </button>

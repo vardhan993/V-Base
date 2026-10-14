@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   IconMail,
   IconMapPin,
@@ -18,27 +18,32 @@ import {
   IconDatabase,
   IconArrowRight,
   IconPencil,
-  IconTrash,
+  IconTrash2,
   IconArchive,
-  IconRotateCcw,
+  IconSend,
 } from "@/lib/icons";
 import { api } from "@/lib/api";
 import { Contact, Company } from "@/lib/types";
-import { ContactAvatar, StageBadge } from "@/components/crm";
+import { ContactAvatar, StageBadge, EmailComposer, SentEmails } from "@/components/crm";
+import { ContactSequences } from "@/components/crm/contact-sequences";
 import { CRM_STAGES, parsePhone } from "@/lib/crm";
 import { toast } from "@/lib/store";
 import { ContactEditor } from "@/components/crm/contact-editor";
 
 export function ContactPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(true);
-  const [company, setCompany] = useState<Company | null>(null);
+  const [company, setCompany] = useState<{ id: number; name: string } | null>(null);
   const [copied, setCopied] = useState<Record<string, boolean>>({});
   const [tasks, setTasks] = useState<{ id: number; title: string; done: boolean; due_at?: string | null }[]>([]);
   const [newTask, setNewTask] = useState("");
   const [savingStage, setSavingStage] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
+  // Bumped after a successful send so the history card refetches.
+  const [emailVersion, setEmailVersion] = useState(0);
 
   const loadTasks = async (contactId: string) => {
     try {
@@ -61,7 +66,7 @@ export function ContactPage() {
         const co = await api.get<Company | null>(`/contacts/${id}/company`).catch(() => null);
         if (!cancelled) {
           setContact(c);
-          setCompany(co);
+          setCompany(co ? { id: co.id, name: co.name ?? "" } : null);
           loadTasks(id);
         }
       } catch (e) {
@@ -126,6 +131,29 @@ export function ContactPage() {
     }
   };
 
+  // Declared before the early returns so the hook order never changes
+  // between the loading pass and the loaded pass (React rules of hooks).
+  const refreshCompany = useCallback(async () => {
+    if (!id) {
+      setCompany(null);
+      return;
+    }
+    try {
+      const linked = await api.get<Company | null>(`/contacts/${id}/company`);
+      setCompany(linked ? { id: linked.id, name: linked.name ?? "" } : null);
+    } catch {
+      setCompany(null);
+    }
+  }, [id]);
+
+  const refresh = useCallback(
+    (u: Contact) => {
+      setContact(u);
+      void refreshCompany();
+    },
+    [refreshCompany],
+  );
+
   if (loading && !contact) {
     return (
       <div className="flex items-center gap-3">
@@ -146,42 +174,30 @@ export function ContactPage() {
 
   const name = contact.display_name || contact.full_name || contact.email || "Contact";
 
-  const refresh = useCallback(
-    (u: Contact) => {
-      setContact(u);
-      setCompany(
-        (() => {
-          if (!id) return null;
-          try {
-            const c = api.get<Company | null>(`/contacts/${id}/company`).catch(() => null);
-            return c;
-          } catch {
-            return null;
-          }
-        })(),
-        {}
-      );
-    },
-    [id],
-  );
-
   return (
     <div className="flex flex-col gap-6">
-      <ContactHeader contact={contact} name={name} stage={contact.stage} savingStage={savingStage} onStageChange={changeStage} />
+      <ContactHeader
+        contact={contact}
+        name={name}
+        stage={contact.stage}
+        savingStage={savingStage}
+        onStageChange={changeStage}
+        onSendEmail={() => setEmailOpen(true)}
+      />
       {editing ? (
         <ContactEditor
           contact={contact}
           company={company ? { id: company.id, name: company.name } : null}
           onSaved={refresh}
-          onDelete={(c) => {
-            setContact(null);
-            setCompany(null);
-            toast(`Contact deleted`, "info");
+          onCancel={() => setEditing(false)}
+          onDelete={() => {
+            toast("Contact deleted", "success");
+            navigate("/contacts");
           }}
         />
       ) : (
-
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <DetailSection title="Contact details" icon={<IconMail className="h-4 w-4" />}>
           <div className="space-y-3">
             <Field
@@ -193,7 +209,14 @@ export function ContactPage() {
               copied={copied.email}
               onCopy={handleCopy}
             />
-            <Field label="Phone" value={contact.phone} copyKey="phone" copyValue={contact.phone || ""} copied={copied.phone} onCopy={handleCopy} />
+            <Field
+              label="Phone"
+              value={parsePhone(contact.phone)?.display ?? contact.phone}
+              copyKey="phone"
+              copyValue={contact.phone || ""}
+              copied={copied.phone}
+              onCopy={handleCopy}
+            />
             {contact.phone && !(parsePhone(contact.phone)?.hasCountryCode ?? true) && (
               <p className="rounded-md border border-[var(--vbase-amber)]/30 bg-[var(--vbase-amber)]/5 px-2.5 py-1.5 text-xs text-[var(--vbase-slate600)]">
                 No country code on this number — add one (e.g. +91, +1) so it dials from anywhere. Flagged in Data Quality.
@@ -295,13 +318,20 @@ export function ContactPage() {
           ) : (
             <span className="text-sm text-[var(--vbase-slate400)]">No tags</span>
           )}
-          <div className="mt-3 flex gap-2">
-            <Link
-              to={`/contacts/${contact.id}/edit`}
-              className="vbase-btn-ghost flex items-center gap-1.5 text-sm"
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              onClick={() => setEditing(true)}
+              className="vbase-btn-primary flex items-center gap-1.5 text-sm"
             >
               <IconPencil className="h-4 w-4" />
               Edit record
+            </button>
+            <Link
+              to={`/contacts/${contact.id}/edit`}
+              className="vbase-btn-secondary flex items-center gap-1.5 text-sm"
+            >
+              <IconExternalLink className="h-4 w-4" />
+              Open full editor
             </Link>
             <button
               onClick={() => {
@@ -327,12 +357,12 @@ export function ContactPage() {
                 if (!window.confirm(`Delete this contact? This cannot be undone.`)) return;
                 api.delete(`/contacts/${contact.id}`).then(() => {
                   toast(`Contact deleted`, "success");
-                  window.location.href = `/contacts`;
+                  navigate("/contacts");
                 });
               }}
               className="vbase-btn-danger flex items-center gap-1.5 text-sm"
             >
-              <IconTrash className="h-4 w-4" />
+              <IconTrash2 className="h-4 w-4" />
               Delete
             </button>
           </div>
@@ -353,6 +383,16 @@ export function ContactPage() {
             <span className="text-sm text-[var(--vbase-slate400)]">Never</span>
           )}
         </DetailCard>
+
+        <div className="md:col-span-2">
+          <DetailCard title="Emails" icon={<IconMail className="h-4 w-4" />}>
+            <SentEmails key={emailVersion} contactId={contact.id} />
+          </DetailCard>
+        </div>
+
+        <div className="md:col-span-2">
+          <ContactSequences contactId={contact.id} />
+        </div>
 
         <div className="md:col-span-2">
           <DetailCard title={`Follow-ups (${tasks.filter((t) => !t.done).length} open)`} icon={<IconListChecks className="h-4 w-4" />}>
@@ -405,12 +445,23 @@ export function ContactPage() {
           </DetailCard>
         </div>
       </div>
-      {editing ? <button onClick={() => setEditing(false)} className="vbase-btn-ghost text-sm">Back to details</button> : <div />}
+
+        </>
+      )}
+
+      <EmailComposer
+        open={emailOpen}
+        to={contact.email}
+        name={name}
+        contactId={contact.id}
+        onClose={() => setEmailOpen(false)}
+        onSent={() => setEmailVersion((v) => v + 1)}
+      />
     </div>
   );
 }
 
-function ContactHeader({ contact, name, stage, savingStage, onStageChange }: { contact: Contact; name: string; stage?: string | null; savingStage: boolean; onStageChange: (stage: string) => void }) {
+function ContactHeader({ contact, name, stage, savingStage, onStageChange, onSendEmail }: { contact: Contact; name: string; stage?: string | null; savingStage: boolean; onStageChange: (stage: string) => void; onSendEmail: () => void }) {
   const [editingHeader, setEditingHeader] = useState(false);
   return (
     <div className="flex flex-wrap items-start justify-between gap-4">
@@ -444,10 +495,21 @@ function ContactHeader({ contact, name, stage, savingStage, onStageChange }: { c
             <button onClick={() => setEditingHeader(false)} className="vbase-btn-secondary flex items-center gap-1.5 text-sm">Done</button>
           </>
         ) : (
-          <button onClick={() => setEditingHeader(true)} className="vbase-btn-ghost flex items-center gap-1.5 text-sm">
-            <IconPencil className="h-4 w-4" />
-            Rename
-          </button>
+          <>
+            <button
+              onClick={onSendEmail}
+              disabled={!contact.email}
+              title={contact.email ? `Email ${contact.email}` : "This contact has no email address"}
+              className="vbase-btn-primary flex items-center gap-1.5 text-sm"
+            >
+              <IconSend className="h-4 w-4" />
+              Send email
+            </button>
+            <button onClick={() => setEditingHeader(true)} className="vbase-btn-ghost flex items-center gap-1.5 text-sm">
+              <IconPencil className="h-4 w-4" />
+              Rename
+            </button>
+          </>
         )}
         <StageBadge stage={stage} />
         <select
@@ -536,7 +598,9 @@ function Field({ label, href, value, copyKey, copyValue, copied, onCopy }: {
         onClick={() => {
           onCopy?.(copyKey, copyValue);
         }}
-        className={`flex h-7 items-center justify-center rounded text-[var(--vbase-slate400)] transition-colors hover:bg-[var(--vbase-bg-alt)] hover:text-[var(--vbase-slate700)] ${
+        aria-label={`Copy ${label}`}
+        title={copied ? "Copied" : `Copy ${label}`}
+        className={`vbase-btn vbase-btn-icon-sm vbase-btn-ghost ${
           copied ? "text-[var(--vbase-green)]" : ""
         }`}
       >

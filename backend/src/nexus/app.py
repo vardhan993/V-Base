@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +13,7 @@ from fastapi.responses import ORJSONResponse
 from nexus.api import docs as api_docs
 from nexus.api.v1.routers import api_router
 from nexus.core.config import settings
-from nexus.core.db import database_health, dispose_engine, init_db
+from nexus.core.db import database_health, dispose_engine, get_session_factory, init_db
 from nexus.core.logging_config import configure_logging
 from nexus.core.middleware import (
     CsrfOriginMiddleware,
@@ -20,6 +21,7 @@ from nexus.core.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
+from nexus.core.sequences import dispatch_due
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +32,40 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings.validate_production()
     await init_db()
     logger.info("V-Base API started", extra={"environment": settings.environment, "version": settings.app_version})
+    loop_task: asyncio.Task | None = None
+    if settings.sequences_poll_enabled:
+        loop_task = asyncio.create_task(_sequence_poll_loop())
     try:
         yield
     finally:
+        if loop_task is not None:
+            loop_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await loop_task
         await dispose_engine()
+
+
+async def _sequence_poll_loop() -> None:
+    """Wake up now and then and send whatever has come due.
+
+    This is the one piece of the API that acts without being asked, so it fails
+    loudly and never kills the process: a provider outage should not take the
+    app down with it. Progress lives in the database, so a restart just means
+    the next tick picks up where the last one stopped.
+    """
+    while True:
+        await asyncio.sleep(settings.sequence_poll_seconds)
+        try:
+            factory = get_session_factory()
+            async with factory() as session:
+                outcome = await dispatch_due(session, limit=settings.sequence_batch_size)
+            if outcome.get("sent") or outcome.get("failed"):
+                logger.info("Sequence dispatch", extra=outcome)
+        except asyncio.CancelledError:  # pragma: no cover - shutdown path
+            raise
+        except Exception:
+            # One bad cycle must not stop future cycles.
+            logger.exception("Sequence dispatch failed")
 
 
 def _make_app() -> FastAPI:

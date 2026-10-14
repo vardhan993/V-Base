@@ -23,12 +23,21 @@
   --vbase-slate700: #334155;
   --vbase-slate800: #1e293b;
   --vbase-slate900: #0f172a;
-  --vbase-indigo: #6366f1;
-  --vbase-indigo-hover: #4f46e5;
+  /* Indigo carries links, focus rings and the brand mark, so it is pinned to a
+   * shade that clears AA on white (#6366f1 measured 4.47 — under the line). */
+  --vbase-indigo: #4f46e5;
+  --vbase-indigo-hover: #4338ca;
   --vbase-green: #22c55e;
   --vbase-amber: #f59e0b;
   --vbase-red: #ef4444;
   --vbase-cyan: #06b6d4;
+  /* Avatar fills carry white initials, so they stay dark enough for them. */
+  --vbase-avatar-lightness: 46%;
+  /* Terminal/code blocks stay dark in both themes: they are quoted shell
+   * output, and inverting them turned the dark theme's copy box into a glaring
+   * white panel. Deliberately not overridden in ``.dark``. */
+  --vbase-terminal-bg: #0f172a;
+  --vbase-terminal-fg: #e2e8f0;
 }
 
 .dark {
@@ -57,6 +66,7 @@
   --vbase-amber: #fbbf24;
   --vbase-red: #f87171;
   --vbase-cyan: #22d3ee;
+  --vbase-avatar-lightness: 36%;
 }
 
 @layer base {
@@ -65,7 +75,10 @@
     color-scheme: light;
   }
 
-  .dark html {
+  /* ``dark`` is on <html> itself, so it must be a compound selector.
+   * ``.dark html`` never matched anything and native controls (select
+   * popups, date pickers, scrollbars) stayed light-on-light in dark mode. */
+  html.dark {
     color-scheme: dark;
   }
 
@@ -233,98 +246,226 @@
     color: var(--vbase-slate500);
   }
 
+  /* Self-contained select styling. Some call sites use bare ``vbase-select``
+   * (no ``vbase-input``), so the surface and text colour live here too — that
+   * is what keeps the closed box readable in dark mode. */
   .vbase-select {
     appearance: none;
+    height: 2.25rem;
+    border-radius: 0.375rem;
+    border: 1px solid var(--vbase-border);
+    background-color: var(--vbase-bg);
+    color: var(--vbase-slate900);
+    font-size: 0.875rem;
     background-image: url("/chevron-down.svg");
     background-size: 12px;
     background-repeat: no-repeat;
     background-position: right 8px center;
-    padding-right: 2.25rem;
+    padding: 0 2.25rem 0 0.75rem;
+    transition: color 150ms, background-color 150ms, border-color 150ms, box-shadow 150ms;
   }
 
-  .vbase-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    padding: 0.5rem 1rem;
-    transition: color 150ms, background-color 150ms, border-color 150ms, box-shadow 150ms, transform 100ms;
-    cursor: pointer;
-    user-select: none;
-    white-space: nowrap;
-  }
-
-  .vbase-btn:focus-visible {
+  .vbase-select:focus-visible {
     outline: none;
     box-shadow: 0 0 0 2px var(--vbase-indigo);
   }
 
-  .vbase-btn:disabled {
-    pointer-events: none;
+  .vbase-select:disabled {
+    cursor: not-allowed;
     opacity: 0.5;
   }
 
+  /* The popup list is drawn by the OS. Pinning both colours keeps every option
+   * readable regardless of the ``color-scheme`` the platform honours. */
+  .vbase-select option,
+  .vbase-select optgroup {
+    background-color: var(--vbase-bg);
+    color: var(--vbase-slate900);
+  }
+
+  /* ------------------------------------------------------------------
+   * Buttons — one system for the whole app.
+   *
+   * Tones: .vbase-btn-primary | .vbase-btn-secondary | .vbase-btn-ghost
+   *        | .vbase-btn-danger | .vbase-btn-danger-soft
+   * Sizes: .vbase-btn-sm | .vbase-btn-lg (default is medium, 36px)
+   * Shapes: .vbase-btn-icon | .vbase-btn-icon-sm (square icon buttons;
+   *         combine with a tone, e.g. "vbase-btn-icon vbase-btn-ghost")
+   * State: [disabled] and [data-loading="true"] are handled by the base.
+   * ------------------------------------------------------------------ */
+
+  .vbase-btn,
+  .vbase-btn-primary,
+  .vbase-btn-secondary,
+  .vbase-btn-ghost,
+  .vbase-btn-danger,
+  .vbase-btn-danger-soft {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    padding: 0 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid transparent;
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.25;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: color 150ms, background-color 150ms, border-color 150ms, box-shadow 150ms,
+      transform 100ms;
+  }
+
+  .vbase-btn:focus-visible,
+  .vbase-btn-primary:focus-visible,
+  .vbase-btn-secondary:focus-visible,
+  .vbase-btn-ghost:focus-visible,
+  .vbase-btn-danger:focus-visible,
+  .vbase-btn-danger-soft:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--vbase-bg), 0 0 0 4px var(--vbase-indigo);
+  }
+
+  .vbase-btn:disabled,
+  .vbase-btn-primary:disabled,
+  .vbase-btn-secondary:disabled,
+  .vbase-btn-ghost:disabled,
+  .vbase-btn-danger:disabled,
+  .vbase-btn-danger-soft:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .vbase-btn[data-loading="true"],
+  .vbase-btn-primary[data-loading="true"],
+  .vbase-btn-secondary[data-loading="true"],
+  .vbase-btn-ghost[data-loading="true"],
+  .vbase-btn-danger[data-loading="true"] {
+    cursor: wait;
+    opacity: 0.75;
+  }
+
+  /* Filled buttons carry white text, so their background is pinned to a shade
+   * dark enough for it in *both* themes (#4f46e5 clears 6:1, the lighter
+   * --vbase-indigo drifted under AA). The theme-neutral accents are for text
+   * and tints; these two are the only places a strong fill is required. */
   .vbase-btn-primary {
-    background-color: var(--vbase-indigo);
+    background-color: #4f46e5;
     color: #fff;
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08), inset 0 1px 0 0 rgb(255 255 255 / 0.12);
   }
 
-  .vbase-btn-primary:hover {
-    background-color: var(--vbase-indigo-hover);
+  .vbase-btn-primary:hover:not(:disabled) {
+    background-color: #6366f1;
+    box-shadow: 0 4px 10px -2px rgb(99 102 241 / 0.45), inset 0 1px 0 0 rgb(255 255 255 / 0.12);
+    transform: translateY(-1px);
   }
 
-  .vbase-btn-primary:active {
-    transform: scale(0.98);
+  .vbase-btn-primary:active:not(:disabled) {
+    transform: translateY(0) scale(0.98);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
   }
 
   .dark .vbase-btn-primary {
-    box-shadow: 0 1px 1px 0 rgb(0 0 0 / 0.4);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.5), inset 0 1px 0 0 rgb(255 255 255 / 0.08);
   }
 
   .vbase-btn-secondary {
     background-color: var(--vbase-bg);
     color: var(--vbase-slate700);
-    border: 1px solid var(--vbase-border);
+    border-color: var(--vbase-border-dark);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   }
 
-  .vbase-btn-secondary:hover {
+  .vbase-btn-secondary:hover:not(:disabled) {
     background-color: var(--vbase-bg-alt);
+    border-color: var(--vbase-indigo);
+    color: var(--vbase-indigo);
+    transform: translateY(-1px);
   }
 
-  .vbase-btn-secondary:active {
-    transform: scale(0.98);
+  .vbase-btn-secondary:active:not(:disabled) {
+    transform: translateY(0) scale(0.98);
   }
 
   .vbase-btn-ghost {
     background-color: transparent;
     color: var(--vbase-slate600);
-    padding: 0.375rem 0.75rem;
   }
 
-  .vbase-btn-ghost:hover {
+  .vbase-btn-ghost:hover:not(:disabled) {
     background-color: var(--vbase-muted-bg);
     color: var(--vbase-slate800);
   }
 
-  .vbase-btn-ghost:active {
+  .vbase-btn-ghost:active:not(:disabled) {
     transform: scale(0.98);
   }
 
   .vbase-btn-danger {
-    background-color: var(--vbase-red);
+    background-color: #b91c1c;
     color: #fff;
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08), inset 0 1px 0 0 rgb(255 255 255 / 0.12);
   }
 
-  .vbase-btn-danger:hover {
-    background-color: color-mix(in srgb, var(--vbase-red) 90%, transparent);
+  .vbase-btn-danger:hover:not(:disabled) {
+    background-color: #dc2626;
+    box-shadow: 0 4px 10px -2px rgb(239 68 68 / 0.4);
+    transform: translateY(-1px);
   }
 
-  .vbase-btn-danger:active {
-    transform: scale(0.98);
+  .vbase-btn-danger:active:not(:disabled) {
+    transform: translateY(0) scale(0.98);
+  }
+
+  /* Soft destructive tone for icon buttons and inline row actions:
+   * quiet until hovered, so tables don't look alarming by default. */
+  .vbase-btn-danger-soft {
+    background-color: transparent;
+    color: var(--vbase-slate500);
+  }
+
+  .vbase-btn-danger-soft:hover:not(:disabled) {
+    background-color: rgb(239 68 68 / 0.08);
+    color: var(--vbase-red);
+  }
+
+  .vbase-btn-danger-soft:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+
+  .vbase-btn-sm {
+    min-height: 2rem;
+    padding: 0 0.75rem;
+    font-size: 0.8125rem;
+    border-radius: 0.4375rem;
+  }
+
+  .vbase-btn-lg {
+    min-height: 2.75rem;
+    padding: 0 1.5rem;
+    font-size: 1rem;
+    border-radius: 0.625rem;
+  }
+
+  .vbase-btn-icon {
+    width: 2.25rem;
+    height: 2.25rem;
+    min-height: 0;
+    padding: 0;
+    flex-shrink: 0;
+  }
+
+  .vbase-btn-icon-sm {
+    width: 2rem;
+    height: 2rem;
+    min-height: 0;
+    padding: 0;
+    border-radius: 0.4375rem;
+    flex-shrink: 0;
   }
 
   .vbase-table {

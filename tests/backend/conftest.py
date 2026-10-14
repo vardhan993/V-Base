@@ -46,6 +46,9 @@ os.environ.setdefault("DB_MAX_OVERFLOW", "2")
 # Keep the in-process rate limiter from tripping across the whole suite.
 os.environ.setdefault("RATE_LIMIT_AUTH_PER_MINUTE", "500")
 os.environ.setdefault("RATE_LIMIT_WRITE_PER_MINUTE", "2000")
+# The sequence poller is a background loop that sends mail on a timer. Tests
+# drive dispatch through the API instead, so no loop should be running.
+os.environ.setdefault("SEQUENCES_POLL_ENABLED", "false")
 
 # Imports write the uploaded spreadsheet to disk and backup tests write
 # snapshots. Point both at a throwaway directory so a test run never leaves
@@ -163,6 +166,21 @@ def anonymous_client(_database):
 
 def unique(prefix: str = "t") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:10]}"
+
+
+def current_head_revision() -> str:
+    """Head revision from the Alembic script directory.
+
+    Tests that assert on the revision the API reports use this rather than a
+    hard-coded literal: the assertion still proves the database was migrated to
+    head, but adding a migration no longer breaks unrelated tests.
+    """
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    config = Config(str(BACKEND / "alembic.ini"))
+    config.set_main_option("script_location", str(BACKEND / "alembic"))
+    return ScriptDirectory.from_config(config).get_current_head()
 
 
 def run_sql(sql: str, params: dict | None = None) -> list[dict]:

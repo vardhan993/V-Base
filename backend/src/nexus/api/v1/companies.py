@@ -10,6 +10,7 @@ from nexus.api.deps import get_current_user
 from nexus.core.audit import record_activity, record_audit, snapshot
 from nexus.core.counts import attach_contact_counts, attach_contact_counts_for_company
 from nexus.core.db import get_session
+from nexus.core.quality import company_quality as _company_quality
 from nexus.database import Company, CompanyTag, Tag
 from nexus.schemas.company import (
     CompanyCreate,
@@ -345,31 +346,3 @@ async def _get_or_create_tag(session: AsyncSession, name: str) -> Tag:
 def _diff_fields(before: dict[str, Any], after: dict[str, Any]) -> set[str]:
     """Field names whose value changed between two audit snapshots."""
     return {key for key in after if before.get(key) != after.get(key)}
-
-
-def _company_quality(company: Company | CompanyCreate) -> int:
-    score = 0
-    if company.name:
-        score += 10
-    if company.website:
-        score += 10
-    if company.domain:
-        score += 5
-    if company.linkedin_url:
-        score += 10
-    if company.industry:
-        score += 5
-    if company.city:
-        score += 5
-    if company.country:
-        score += 5
-    if company.employee_count is not None:
-        score += 5
-    if company.founded_year is not None:
-        score += 5
-    if company.technologies:
-        score += 5
-    if isinstance(company, Company):
-        if company.contacts:
-            score += min(15, len(company.contacts) * 3)
-    return min(100, score)

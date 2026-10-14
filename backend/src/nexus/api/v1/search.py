@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.api.deps import get_current_user
 from nexus.core.db import get_session
-from nexus.database import Company, Contact, SavedSearch, Tag
+from nexus.database import Company, Contact, Lead, SavedSearch, Tag
 
 router = APIRouter(tags=["search"])
 
@@ -15,11 +15,11 @@ router = APIRouter(tags=["search"])
 async def global_search(
     q: str = Query(..., min_length=1, max_length=500),
     limit: int = Query(20, ge=1, le=100),
-    entity: str = Query("all", pattern="^(all|companies|contacts)$"),
+    entity: str = Query("all", pattern="^(all|companies|contacts|leads)$"),
     session: AsyncSession = Depends(get_session),
     current_user=Depends(get_current_user),
 ):
-    results = {"companies": [], "contacts": [], "total": 0}
+    results = {"companies": [], "contacts": [], "leads": [], "total": 0}
 
     if entity in ("all", "companies"):
         stmt = select(Company).where(Company.search_filter(q))
@@ -77,6 +77,35 @@ async def global_search(
         ]
         results["total"] += len(contacts)
 
+    if entity in ("all", "leads"):
+        stmt = select(Lead).where(Lead.search_filter(q))
+        stmt = stmt.order_by(Lead.updated_at.desc()).limit(limit)
+        result = await session.execute(stmt)
+        leads = list(result.scalars().unique().all())
+        results["leads"] = [
+            {
+                "id": lead.id,
+                "name": lead.display_name,
+                "type": "lead",
+                "subtitle": lead.job_title or lead.company_name or lead.lead_status,
+                "fields": {
+                    "first_name": lead.first_name,
+                    "last_name": lead.last_name,
+                    "full_name": lead.full_name,
+                    "job_title": lead.job_title,
+                    "email": lead.email,
+                    "phone": lead.phone,
+                    "company_name": lead.company_name,
+                    "lead_source": lead.lead_source,
+                    "lifecycle_stage": lead.lifecycle_stage,
+                    "lead_status": lead.lead_status,
+                    "lead_score": lead.lead_score,
+                },
+            }
+            for lead in leads
+        ]
+        results["total"] += len(leads)
+
     return results
 
 
@@ -86,7 +115,7 @@ async def search_suggestions(
     session: AsyncSession = Depends(get_session),
     current_user=Depends(get_current_user),
 ):
-    suggestions = {"companies": [], "contacts": [], "tags": [], "industries": [], "cities": []}
+    suggestions = {"companies": [], "contacts": [], "leads": [], "tags": [], "industries": [], "cities": []}
 
     if len(q) >= 2:
         stmt = select(Company).where(Company.name.ilike(f"%{q}%")).limit(6)
@@ -96,6 +125,12 @@ async def search_suggestions(
         stmt = select(Contact).where(Contact.full_name.ilike(f"%{q}%")).limit(6)
         result = await session.execute(stmt)
         suggestions["contacts"] = [{"id": c.id, "name": c.display_name} for c in result.scalars().unique().all()]
+
+        stmt = select(Lead).where(Lead.full_name.ilike(f"%{q}%")).limit(6)
+        result = await session.execute(stmt)
+        suggestions["leads"] = [
+            {"id": lead.id, "name": lead.display_name} for lead in result.scalars().unique().all()
+        ]
 
         stmt = select(Tag).where(Tag.name.ilike(f"%{q}%")).limit(6)
         result = await session.execute(stmt)

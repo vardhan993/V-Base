@@ -49,6 +49,7 @@ interface AppInfo {
   backups_path: string;
   uploads_path: string;
   pg_dump_available: boolean;
+  pg_dump_binary: string | null;
   last_backup: { created_at?: string; kind?: string; file?: string } | null;
   database: { server_version: string | null; alembic_revision: string | null; size_bytes: number | null; host: string | null };
 }
@@ -246,6 +247,9 @@ export function BackupPage() {
                 <Detail label="Host" value={host ?? "—"} mono />
                 <Detail label="Schema revision" value={info?.database?.alembic_revision ?? "—"} mono />
                 <Detail label="Backup directory" value={listing?.backups_path ?? info?.backups_path ?? "—"} mono />
+                {info?.pg_dump_available && (
+                  <Detail label="pg_dump binary" value={info.pg_dump_binary ?? "pg_dump"} mono />
+                )}
                 <Detail
                   label="Last scheduled backup"
                   value={info?.last_backup?.created_at ? fmtWhen(info.last_backup.created_at) : "Never"}
@@ -547,8 +551,8 @@ function CommandLine({ command }: { command: string }) {
     }
   };
   return (
-    <div className="mt-1.5 flex items-start gap-2 rounded-md bg-[var(--vbase-slate900)] px-2.5 py-2">
-      <code className="min-w-0 flex-1 break-all font-mono text-[11px] leading-relaxed text-[var(--vbase-slate100)]">
+    <div className="mt-1.5 flex items-start gap-2 rounded-md bg-[var(--vbase-terminal-bg)] px-2.5 py-2">
+      <code className="min-w-0 flex-1 break-all font-mono text-[11px] leading-relaxed text-[var(--vbase-terminal-fg)]">
         {command}
       </code>
       <button

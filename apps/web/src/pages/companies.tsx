@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   IconPlus,
   IconSearch,
@@ -19,12 +19,15 @@ import { EntityActions, EmptyState } from "@/components/crm";
 import { toast } from "@/lib/store";
 
 export function CompaniesPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  // Deep links (topbar search, command palette) arrive as #/companies?search=…
+  const [search, setSearch] = useState(() => new URLSearchParams(location.search).get("search")?.trim() ?? "");
   const [filters, setFilters] = useState<CompanyFilters>({});
   const [sort] = useState<{ field: string; order: string }>({
     field: "updated_at",
@@ -54,6 +57,13 @@ export function CompaniesPage() {
   useEffect(() => {
     setSelected(new Set());
   }, [page, search, filters]);
+
+  // Keep the list in step with the URL: a search issued while this page is
+  // already mounted (command palette, browser back) must still apply.
+  useEffect(() => {
+    const q = new URLSearchParams(location.search).get("search")?.trim() ?? "";
+    if (q) setSearch(q);
+  }, [location.search]);
 
   const toggleSelect = (id: number) => {
     setSelected((prev) => {
@@ -121,7 +131,7 @@ export function CompaniesPage() {
           <div>
             <h1 className="text-xl font-semibold text-[var(--vbase-slate900)]">Companies</h1>
             <p className="text-sm text-[var(--vbase-slate500)]">
-              {total} company{total !== 1 ? "ies" : "y"}
+              {total} {total === 1 ? "company" : "companies"}
             </p>
           </div>
         </div>
@@ -130,16 +140,10 @@ export function CompaniesPage() {
             <IconDownload className="h-4 w-4" />
             <span>Export CSV</span>
           </button>
-          <button
-            onClick={() => {
-              window.location.hash = "/import";
-              toast("Use Import Center to add companies from CSV/XLSX", "success");
-            }}
-            className="vbase-btn-primary flex items-center gap-1.5"
-          >
+          <Link to="/companies/new" className="vbase-btn-primary flex items-center gap-1.5">
             <IconPlus className="h-4 w-4" />
             <span>Add company</span>
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -174,9 +178,7 @@ export function CompaniesPage() {
               title="No companies yet"
               description="Import a CSV or spreadsheet to start building your company base."
               actionLabel="Add company"
-              onAction={() => {
-                window.location.hash = "/import";
-              }}
+              onAction={() => navigate("/companies/new")}
             />
           </div>
         ) : (
@@ -232,6 +234,7 @@ export function CompaniesPage() {
                       selected={selected.has(company.id)}
                       onToggleSelect={() => toggleSelect(company.id)}
                       onChanged={fetchList}
+                      onEdit={() => navigate(`/companies/${company.id}/edit`)}
                     />
                   ))}
                 </tbody>
@@ -240,7 +243,7 @@ export function CompaniesPage() {
             <div className="border-t border-[var(--vbase-border)] bg-[var(--vbase-bg-alt)] px-4 py-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-[var(--vbase-slate500)]">
-                  {total} company{total !== 1 ? "ies" : "y"} total
+                  {total} {total === 1 ? "company" : "companies"} total
                 </span>
                 <div className="flex items-center gap-2">
                   <CRMButton
@@ -272,11 +275,13 @@ function CompanyRow({
   selected,
   onToggleSelect,
   onChanged,
+  onEdit,
 }: {
   company: Company;
   selected: boolean;
   onToggleSelect: () => void;
   onChanged: () => void;
+  onEdit: () => void;
 }) {
   return (
     <tr className="group transition-colors hover:bg-[var(--vbase-bg-alt)]">
@@ -380,6 +385,7 @@ function CompanyRow({
           id={company.id}
           name={company.name}
           archived={company.is_archived}
+          onEdit={onEdit}
           onArchive={async () => {
             await archiveCompany(company.id);
             onChanged();

@@ -79,7 +79,7 @@ export function ListsPage() {
                 </div>
                 <span className="text-sm text-[var(--vbase-slate500)]">{list.contact_count || 0}</span>
                 <div className="flex items-center gap-1" onClick={() => fetchListContacts(list.id)}>
-                  <button className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--vbase-slate500)] hover:bg-[var(--vbase-bg-alt)] hover:text-[var(--vbase-slate700)]">
+                  <button aria-label={`Open ${list.name}`} className="vbase-btn vbase-btn-icon-sm vbase-btn-ghost">
                     <IconChevronRight className="h-4 w-4" />
                   </button>
                 </div>
@@ -117,7 +117,7 @@ export function ListsPage() {
                     <p className="font-medium text-[var(--vbase-slate800)]">{contact.name}</p>
                     <p className="text-xs text-[var(--vbase-slate500)]">{contact.job_title || contact.email}</p>
                   </div>
-                  <button className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--vbase-slate500)] hover:bg-[var(--vbase-bg-alt)] hover:text-[var(--vbase-red)]" onClick={() => removeContacts([contact.id])}>
+                  <button aria-label={`Remove ${contact.name} from list`} className="vbase-btn vbase-btn-icon-sm vbase-btn-danger-soft" onClick={() => removeContacts([contact.id])}>
                     <IconX className="h-4 w-4" />
                   </button>
                 </div>

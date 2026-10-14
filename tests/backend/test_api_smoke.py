@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .conftest import run_sql, unique
+from .conftest import current_head_revision, run_sql, unique
 
 
 def promote_to_superuser(email: str) -> None:
@@ -404,7 +404,7 @@ def test_settings_app_info_describes_postgres(auth_client):
     assert body["app_name"] == "V-Base"
     assert body["tagline"] == "Your Business Data. One Powerful Base."
     assert body["database_engine"] == "postgresql"
-    assert body["database"]["alembic_revision"] == "0002_crm_stage_tasks"
+    assert body["database"]["alembic_revision"] == current_head_revision()
     assert body["database"]["size_bytes"] > 0
     # Credentials must never be exposed.
     assert "password" not in str(body).lower()

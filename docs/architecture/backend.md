@@ -20,11 +20,13 @@ backend/
   alembic/versions/         migration scripts (single head: 0001_initial)
   src/nexus/
     app.py                  FastAPI app factory, middleware chain, health probes
-    api/v1/                 routers: auth, companies, contacts, lists, tags, search,
-                            views, custom fields, import, duplicates, quality,
-                            analytics, activity, settings, users
+    api/v1/                 routers: auth, companies, contacts, leads, tasks, lists,
+                            tags, search, views, custom fields, import, duplicates,
+                            quality, analytics, activity, email, sequences,
+                            settings, users
     commands/               operator CLI: run, migrate, admin, backup
-    core/                   config, db engine, security, middleware, logging, audit
+    core/                   config, db engine, security, middleware, logging, audit,
+                            email (Resend/Gmail), sequences (dispatch loop)
     database/               SQLAlchemy models and the session/Base wiring
     schemas/                Pydantic request/response models
   tests/                    pytest suite (runs against a real PostgreSQL database)
