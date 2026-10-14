@@ -62,3 +62,6 @@ Thumbs.db
 
 # Cloudflare Wrangler build cache for the Sites deployment.
 apps/web/.wrangler/
+
+# Scratch/runtime output that must never be committed.
+tmp/
