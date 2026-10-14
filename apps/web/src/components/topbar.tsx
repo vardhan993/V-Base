@@ -7,7 +7,6 @@ import {
   IconPlus,
   IconFileSpreadsheet,
   IconCommand,
-  IconUser,
   IconLogout,
   IconSettings,
   IconUsers,
@@ -38,6 +37,13 @@ export function Topbar() {
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
 
+  const initials = (user?.full_name || user?.email || "U")
+    .split(/[@ ._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part: string) => part[0]?.toUpperCase())
+    .join("") || "U";
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
@@ -65,7 +71,7 @@ export function Topbar() {
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b border-[var(--vbase-border)] bg-[var(--vbase-bg)]/95 backdrop-blur supports-[backdrop-filter]:bg-[var(--vbase-bg)]/70 px-4">
       <form onSubmit={submitSearch} className="flex flex-1 items-center gap-3">
-        <div className="relative flex w-full max-w-md items-center rounded-md border border-[var(--vbase-border)] bg-[var(--vbase-bg)] py-1.5 pl-3 pr-9 shadow-sm">
+        <div className="relative flex w-full max-w-md items-center rounded-lg border border-[var(--vbase-border)] bg-[var(--vbase-muted-bg)] py-1.5 pl-3 pr-9 transition-colors focus-within:border-[var(--vbase-indigo)] focus-within:bg-[var(--vbase-bg)] focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--vbase-indigo)_18%,transparent)]">
           <IconSearch className="ml-2 h-4 w-4 text-[var(--vbase-slate500)]" />
           <input
             type="search"
@@ -82,13 +88,14 @@ export function Topbar() {
       </form>
 
       <div className="flex items-center gap-1.5">
-        <Link
-          to="/import"
-          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-[var(--vbase-slate700)] transition-colors hover:bg-[var(--vbase-muted-bg)] hover:text-[var(--vbase-slate900)]"
+        <button
+          type="button"
+          onClick={() => navigate("/import")}
+          className="vbase-btn vbase-btn-secondary vbase-btn-sm"
         >
           <IconFileSpreadsheet className="h-4 w-4" />
           <span className="hidden sm:inline">Import</span>
-        </Link>
+        </button>
 
         <QuickAddMenu />
 
@@ -105,9 +112,17 @@ export function Topbar() {
             <IconCommand className="h-4 w-4" />
           </button>
 
-          <div className="flex items-center gap-2 rounded-full bg-[var(--vbase-muted-bg)] px-3 py-1.5 text-sm">
-            <IconUser className="h-4 w-4 text-[var(--vbase-slate500)]" />
-            <span className="font-medium text-[var(--vbase-slate800)]">{user?.full_name || user?.email || "User"}</span>
+          <div className="flex items-center gap-1 rounded-full bg-[var(--vbase-muted-bg)] pl-1.5 pr-2 py-1">
+            <span
+              className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+              style={{ backgroundImage: "linear-gradient(135deg, var(--vbase-brand-a), var(--vbase-brand-b))" }}
+              aria-hidden="true"
+            >
+              {initials}
+            </span>
+            <span className="max-w-[160px] truncate font-medium text-sm text-[var(--vbase-slate800)]">
+              {user?.full_name || user?.email || "User"}
+            </span>
             <button
               onClick={logout}
               aria-label="Sign out"
@@ -174,7 +189,8 @@ function QuickAddMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-[var(--vbase-slate700)] transition-colors hover:bg-[var(--vbase-muted-bg)] hover:text-[var(--vbase-slate900)]"
+        data-open={open}
+        className="vbase-btn-primary vbase-btn-sm gap-1 rounded-lg data-[open=true]:brightness-110"
       >
         <IconPlus className="h-4 w-4" />
         <span className="hidden sm:inline">Quick Add</span>

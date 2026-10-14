@@ -71,13 +71,17 @@ async def _sequence_poll_loop() -> None:
 def _make_app() -> FastAPI:
     configure_logging()
 
+    expose_docs = not settings.is_production
     application = FastAPI(
         title=f"{settings.app_name} API",
         description=settings.tagline,
         version=settings.app_version,
-        docs_url="/docs",
+        # The OpenAPI schema advertises every endpoint and field type. Keeping
+        # it out of production means a visitor who discovers the API host
+        # learns nothing beyond "this is a FastAPI service".
+        docs_url="/docs" if expose_docs else None,
         redoc_url=None,
-        openapi_url="/openapi.json",
+        openapi_url="/openapi.json" if expose_docs else None,
         default_response_class=ORJSONResponse,
         lifespan=lifespan,
     )
@@ -136,4 +140,8 @@ def _make_app() -> FastAPI:
 
 app = _make_app()
 
-app.include_router(api_docs.docs_router)
+#: The standalone /openapi.json router only exists outside production, where
+#: the built-in docs are also exposed (see _make_app).
+
+if not settings.is_production:
+    app.include_router(api_docs.docs_router)

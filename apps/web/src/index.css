@@ -5,12 +5,12 @@
 }
 
 :root {
-  --vbase-sidebar-bg: #0b1220;
-  --vbase-sidebar-hover: #162032;
-  --vbase-sidebar-active: #1d2a44;
-  --vbase-border: #e4e8ef;
-  --vbase-border-dark: #d0d6e1;
-  --vbase-muted: #6b7280;
+  --vbase-sidebar-bg: #0a1020;
+  --vbase-sidebar-hover: #141c30;
+  --vbase-sidebar-active: #1b2440;
+  --vbase-border: #e6eaf1;
+  --vbase-border-dark: #d2d8e3;
+  --vbase-muted: #697386;
   --vbase-muted-bg: #f4f6fb;
   --vbase-bg: #ffffff;
   --vbase-bg-alt: #f8fafc;
@@ -27,10 +27,16 @@
    * shade that clears AA on white (#6366f1 measured 4.47 — under the line). */
   --vbase-indigo: #4f46e5;
   --vbase-indigo-hover: #4338ca;
+  /* Brand accent pair used for the logo tile, primary buttons and gradient
+   * ornaments. Violet pairs with indigo without replacing it. */
+  --vbase-brand-via: #7c3aed;
+  --vbase-brand-a: #4f46e5;
+  --vbase-brand-b: #7c3aed;
   --vbase-green: #22c55e;
   --vbase-amber: #f59e0b;
   --vbase-red: #ef4444;
   --vbase-cyan: #06b6d4;
+  --vbase-purple: #a855f7;
   /* Avatar fills carry white initials, so they stay dark enough for them. */
   --vbase-avatar-lightness: 46%;
   /* Terminal/code blocks stay dark in both themes: they are quoted shell
@@ -41,15 +47,15 @@
 }
 
 .dark {
-  --vbase-sidebar-bg: #050a16;
-  --vbase-sidebar-hover: #0b1324;
-  --vbase-sidebar-active: #101a30;
-  --vbase-border: #2a3348;
+  --vbase-sidebar-bg: #060b18;
+  --vbase-sidebar-hover: #0d1526;
+  --vbase-sidebar-active: #121b32;
+  --vbase-border: #273044;
   --vbase-border-dark: #1f2738;
   --vbase-muted: #94a3b8;
   --vbase-muted-bg: #111827;
-  --vbase-bg: #0b1120;
-  --vbase-bg-alt: #0f1628;
+  --vbase-bg: #0c1222;
+  --vbase-bg-alt: #101728;
   --vbase-slate100: #1e293b;
   --vbase-slate200: #334155;
   --vbase-slate300: #475569;
@@ -62,10 +68,14 @@
   --vbase-slate950: #f8fafc;
   --vbase-indigo: #818cf8;
   --vbase-indigo-hover: #6366f1;
+  --vbase-brand-via: #8b5cf6;
+  --vbase-brand-a: #6366f1;
+  --vbase-brand-b: #8b5cf6;
   --vbase-green: #34d399;
   --vbase-amber: #fbbf24;
   --vbase-red: #f87171;
   --vbase-cyan: #22d3ee;
+  --vbase-purple: #c084fc;
   --vbase-avatar-lightness: 36%;
 }
 
@@ -137,7 +147,15 @@
   h1, h2, h3, h4, h5, h6 {
     font-weight: 600;
     color: var(--vbase-slate900);
-    line-height: 1.35;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+  }
+
+  /* Numerals wherever totals, counts and tables show figures: fixed-width
+   * digits stop values jittering as they update. */
+  .vbase-table td,
+  .tnum {
+    font-variant-numeric: tabular-nums;
   }
 
   h1 { font-size: 1.5rem; }
@@ -170,14 +188,88 @@
   .vbase-card {
     background-color: var(--vbase-bg);
     border: 1px solid var(--vbase-border);
-    border-radius: 10px;
+    border-radius: 12px;
     box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.06);
     transition: color 150ms, background-color 150ms, border-color 150ms, box-shadow 150ms;
   }
 
   .vbase-card-hover:hover {
-    border-color: var(--vbase-indigo);
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+    border-color: color-mix(in srgb, var(--vbase-indigo) 45%, var(--vbase-border));
+    box-shadow: 0 6px 16px -6px rgb(50 50 93 / 0.12), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  }
+
+  /* ------------------------------------------------------------------
+   * Page header + stat cards — the shared identity for every screen.
+   * ------------------------------------------------------------------ */
+
+  .vbase-page-title {
+    position: relative;
+    padding-left: 1rem;
+  }
+
+  .vbase-page-title::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.35em;
+    bottom: 0.35em;
+    width: 4px;
+    border-radius: 9999px;
+    background: linear-gradient(180deg, var(--vbase-brand-a), var(--vbase-brand-b));
+  }
+
+  .vbase-stat-card {
+    position: relative;
+    background-color: var(--vbase-bg);
+    border: 1px solid var(--vbase-border);
+    border-radius: 12px;
+    padding: 1rem 1.125rem;
+    overflow: hidden;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.06);
+    transition: border-color 150ms, box-shadow 150ms, transform 150ms;
+  }
+
+  .vbase-stat-card:hover {
+    border-color: color-mix(in srgb, var(--vbase-stat-accent, var(--vbase-indigo)) 35%, var(--vbase-border));
+    box-shadow: 0 6px 16px -8px rgb(50 50 93 / 0.18), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+    transform: translateY(-1px);
+  }
+
+  /* A quiet tinted wash anchored bottom-left, tinted by accent per card. */
+  .vbase-stat-card::after {
+    content: "";
+    position: absolute;
+    inset: auto -24px -24px auto;
+    width: 96px;
+    height: 96px;
+    border-radius: 9999px;
+    background: radial-gradient(
+      closest-side,
+      color-mix(in srgb, var(--vbase-stat-accent, var(--vbase-indigo)) 14%, transparent),
+      transparent 70%
+    );
+    pointer-events: none;
+  }
+
+  .vbase-stat-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--vbase-stat-accent, var(--vbase-indigo)) 12%, transparent);
+    color: var(--vbase-stat-accent, var(--vbase-indigo));
+  }
+
+  .vbase-sidebar-group {
+    margin: 0.9rem 0.5rem 0.3rem;
+    padding: 0 0.625rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: rgb(148 163 184 / 0.6);
   }
 
   .vbase-chip {
@@ -353,14 +445,15 @@
    * --vbase-indigo drifted under AA). The theme-neutral accents are for text
    * and tints; these two are the only places a strong fill is required. */
   .vbase-btn-primary {
+    background-image: linear-gradient(135deg, var(--vbase-brand-a), var(--vbase-brand-b));
     background-color: #4f46e5;
     color: #fff;
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08), inset 0 1px 0 0 rgb(255 255 255 / 0.12);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08), inset 0 1px 0 0 rgb(255 255 255 / 0.14);
   }
 
   .vbase-btn-primary:hover:not(:disabled) {
-    background-color: #6366f1;
-    box-shadow: 0 4px 10px -2px rgb(99 102 241 / 0.45), inset 0 1px 0 0 rgb(255 255 255 / 0.12);
+    filter: brightness(1.08);
+    box-shadow: 0 6px 14px -4px rgb(99 102 241 / 0.5), inset 0 1px 0 0 rgb(255 255 255 / 0.14);
     transform: translateY(-1px);
   }
 
@@ -527,10 +620,30 @@
   }
 
   .vbase-skeleton {
-    animation: 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    animation-name: pulse;
+    position: relative;
+    overflow: hidden;
     border-radius: 0.375rem;
     background-color: var(--vbase-slate200);
+  }
+
+  .vbase-skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--vbase-bg) 65%, transparent),
+      transparent
+    );
+    animation: shimmer 1.6s infinite;
+  }
+
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
   }
 
   .dark .vbase-skeleton {

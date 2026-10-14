@@ -12,6 +12,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from nexus.core.config import settings
+from nexus.core.security import constant_time_equals
 from nexus.core.context import build_request_info, reset_request_info, set_request_info
 
 logger = logging.getLogger("nexus.request")
@@ -136,7 +137,7 @@ class CsrfOriginMiddleware(BaseHTTPMiddleware):
             if has_session and request.url.path not in _PRE_AUTH_PATHS:
                 header_token = request.headers.get("x-csrf-token")
                 cookie_token = request.cookies.get("vbase_csrf")
-                if not header_token or not cookie_token or header_token != cookie_token:
+                if not header_token or not cookie_token or not constant_time_equals(header_token, cookie_token):
                     logger.warning("CSRF token mismatch on %s %s", request.method, request.url.path)
                     return self._reject(request, "Invalid CSRF token")
 

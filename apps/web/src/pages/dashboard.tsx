@@ -52,7 +52,7 @@ export function DashboardPage() {
   return (
     <div className="animation-fade-in">
       <div className="mb-6 flex flex-wrap items-baseline gap-3">
-        <h1 className="text-2xl font-semibold text-[var(--vbase-slate900)]">Overview</h1>
+        <h1 className="vbase-page-title text-2xl font-semibold text-[var(--vbase-slate900)]">Overview</h1>
         <span className="text-sm text-[var(--vbase-slate500)]">{user?.email}</span>
       </div>
 
@@ -91,15 +91,15 @@ function MetricsGrid({ metrics }: { metrics: any }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {items.map((item) => (
-        <div key={item.label} className="vbase-card p-4">
+        <div key={item.label} className="vbase-stat-card" style={{ "--vbase-stat-accent": item.color } as React.CSSProperties}>
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs font-medium text-[var(--vbase-slate500)] uppercase tracking-wider">{item.label}</p>
-              <p className="mt-1 text-2xl font-semibold text-[var(--vbase-slate900)]">{item.value ?? 0}</p>
+              <p className="mt-1 text-2xl font-semibold tnum text-[var(--vbase-slate900)]">{item.value ?? 0}</p>
             </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--vbase-bg-alt)] text-[13px]">
-              <item.icon className="h-5 w-5" style={{ color: item.color }} />
-            </div>
+            <span className="vbase-stat-icon">
+              <item.icon className="h-5 w-5" />
+            </span>
           </div>
         </div>
       ))}
