@@ -13,6 +13,7 @@ import {
   IconActivity,
   IconSettings,
   IconStar,
+  IconSparkle,
   IconTag,
   IconDatabase,
   IconBracesIcon,
@@ -20,6 +21,7 @@ import {
   IconListChecks,
   IconSidebarCollapse,
   IconSidebarExpand,
+  IconMailPlus,
 } from "@/lib/icons";
 
 export function Sidebar() {
@@ -30,6 +32,7 @@ export function Sidebar() {
     { to: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard, exact: true },
     { to: "/pipeline", label: "Pipeline", icon: IconColumns3 },
     { to: "/tasks", label: "Follow-ups", icon: IconListChecks },
+    { to: "/leads", label: "Leads", icon: IconSparkle },
     { to: "/companies", label: "Companies", icon: IconBuilding2 },
     { to: "/contacts", label: "Contacts", icon: IconUsers },
     { to: "/all-records", label: "All Records", icon: IconTable2 },
@@ -43,6 +46,7 @@ export function Sidebar() {
     { to: "/duplicates", label: "Duplicates", icon: IconAlertTriangle },
     { to: "/data-quality", label: "Data Quality", icon: IconSparkles },
     { to: "/analytics", label: "Analytics", icon: IconActivity },
+    { to: "/sequences", label: "Sequences", icon: IconMailPlus },
     { to: "/activity", label: "Activity", icon: IconActivity },
     { to: "/settings", label: "Settings", icon: IconSettings },
   ];

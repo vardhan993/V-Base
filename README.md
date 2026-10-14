@@ -147,7 +147,7 @@ backend/
   .env.example            configuration template
 tests/backend/            pytest suite, runs against a real PostgreSQL database
 scripts/windows/          PowerShell launchers + .bat wrappers
-docs/                     DEPLOYMENT.md, BACKUP.md, CLOUDFLARE.md, architecture/
+docs/                     DEPLOYMENT.md, BACKUP.md, EMAIL.md, CLOUDFLARE.md, architecture/
 render.yaml               Render blueprint for the free API service
 docker-compose.yml        local PostgreSQL + API stack
 ```
@@ -161,8 +161,10 @@ timestamps across: `users`, `sessions`, `companies`, `contacts`,
 `contact_emails`, `contact_phones`, `employment_history`, `lists`,
 `list_contacts`, `list_companies`, `tags`, `contact_tags`, `company_tags`,
 `saved_searches`, `saved_views`, `import_jobs`, `import_rows`, `import_errors`,
-`duplicate_candidates`, `verification_events`, `activity_logs`, `audit_logs`,
-`custom_fields`, `custom_field_values`, `settings`.
+`duplicate_candidates`, `verification_events`, `follow_up_tasks`, `leads`,
+`lead_tags`, `email_messages`, `email_sequences`, `email_sequence_steps`,
+`email_sequence_enrollments`, `activity_logs`, `audit_logs`, `custom_fields`,
+`custom_field_values`, `settings`.
 
 Search is served by `pg_trgm` GIN indexes on `lower(name)`/`lower(domain)` and by
 `tsvector` generated columns with GIN indexes on companies and contacts. The
@@ -239,6 +241,7 @@ Full instructions with verified free-tier limits and sources:
   available as WebAssembly wheels — see [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md).
 
 Backups, restores and disaster recovery: **[docs/BACKUP.md](docs/BACKUP.md)**.
+Sending email from a contact record: **[docs/EMAIL.md](docs/EMAIL.md)**.
 
 ---
 

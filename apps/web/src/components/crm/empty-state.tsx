@@ -26,7 +26,7 @@ export function EmptyState({ icon, title, description, actionLabel, onAction }: 
       <p className="font-medium text-[var(--vbase-slate700)]">{title}</p>
       {description && <p>{description}</p>}
       {actionLabel && onAction && (
-        <button onClick={onAction} className="mt-1 flex items-center gap-1.5 rounded-md bg-[var(--vbase-indigo)] px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[var(--vbase-indigo-hover)]">
+        <button onClick={onAction} className="vbase-btn vbase-btn-primary mt-1 gap-1.5">
           <IconPlus className="h-4 w-4" />
           {actionLabel}
         </button>

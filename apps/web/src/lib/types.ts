@@ -74,6 +74,80 @@ export interface Contact {
   name?: string;
 }
 
+export interface ScoreRule {
+  key: string;
+  label: string;
+  kind: string;
+  weight: number;
+  points: number;
+  earned: boolean;
+  detail: string;
+}
+
+/** A prospect tracked from discovery through qualification. Mirrors
+ * ``LeadResponse`` in backend/src/nexus/schemas/lead.py. */
+export interface Lead {
+  id: number;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  job_title?: string | null;
+  department?: string | null;
+  seniority?: string | null;
+  email?: string | null;
+  email_status?: string | null;
+  phone?: string | null;
+  phone_status?: string | null;
+  linkedin_url?: string | null;
+  website?: string | null;
+  company_name?: string | null;
+  company_domain?: string | null;
+  industry?: string | null;
+  employee_count?: number | null;
+  company_size?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  lead_source?: string | null;
+  campaign?: string | null;
+  lifecycle_stage: string;
+  lead_status: string;
+  priority: string;
+  lead_score: number;
+  score_breakdown: ScoreRule[];
+  score_updated_at?: string | null;
+  owner_id?: number | null;
+  company_id?: number | null;
+  next_follow_up_at?: string | null;
+  consent_status?: string | null;
+  do_not_contact: boolean;
+  disqualified_reason?: string | null;
+  notes?: string | null;
+  converted_contact_id?: number | null;
+  converted_company_id?: number | null;
+  converted_at?: string | null;
+  data_quality_score: number;
+  is_archived: boolean;
+  last_verified?: string | null;
+  created_by_id?: number | null;
+  created_at?: string;
+  updated_at?: string;
+  tag_names?: string[];
+  display_name?: string;
+  fit_score: number;
+  engagement_score: number;
+  score_summary: string;
+}
+
+/** Result of converting a lead. Mirrors ``LeadConvertResponse``. */
+export interface LeadConversion {
+  lead: Lead;
+  contact: Contact;
+  company: Company | null;
+  created_contact: boolean;
+  created_company: boolean;
+}
+
 export interface Tag {
   id: number;
   name: string;
@@ -160,3 +234,42 @@ export interface QualitySummary {
 
 export type ThemeMode = "light" | "dark" | "system";
 export type ToastType = "success" | "error" | "info";
+
+/** One email in a sequence. ``delay_days`` is the wait before this step. */
+export interface SequenceStep {
+  id?: number;
+  position: number;
+  delay_days: number;
+  subject: string;
+  body: string;
+}
+
+export interface EmailSequence {
+  id: number;
+  name: string;
+  description?: string | null;
+  is_active: boolean;
+  steps: SequenceStep[];
+  step_count: number;
+  active_enrollments: number;
+  completed_enrollments: number;
+  failed_enrollments: number;
+  emails_sent: number;
+  created_at?: string | null;
+}
+
+/** Where one contact stands in one sequence. */
+export interface SequenceEnrollment {
+  id: number;
+  sequence_id: number;
+  sequence_name?: string | null;
+  contact_id: number;
+  contact_name?: string | null;
+  contact_email?: string | null;
+  status: "active" | "paused" | "completed" | "cancelled" | "failed";
+  current_step: number;
+  next_send_at?: string | null;
+  last_sent_at?: string | null;
+  last_error?: string | null;
+  created_at?: string | null;
+}

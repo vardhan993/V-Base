@@ -10,6 +10,7 @@ from nexus.api.deps import get_current_user
 from nexus.core.audit import record_activity, record_audit, snapshot
 from nexus.core.counts import attach_contact_counts_for_company
 from nexus.core.db import get_session
+from nexus.core.quality import contact_quality as _contact_quality
 from nexus.database import Company, Contact, ContactTag, Tag
 from nexus.schemas.company import CompanyResponse
 from nexus.schemas.contact import (
@@ -298,7 +299,10 @@ async def update_contact(
         await attach_contact_counts_for_company(session, company)
         contact.company = company
         contact.company_id = company.id
-    elif "company_name" in update_data and not update_data["company_name"]:
+    elif "company_name" in update_data:
+        # The name was cleared, or it no longer matches any company. Drop the
+        # stale link so the record never keeps pointing at a company it is no
+        # longer associated with; the free-text company_name still shows.
         contact.company = None
         contact.company_id = None
     contact.data_quality_score = _contact_quality(contact)
@@ -471,23 +475,3 @@ async def _get_or_create_tag(session: AsyncSession, name: str) -> Tag:
 def _diff_fields(before: dict[str, Any], after: dict[str, Any]) -> set[str]:
     """Field names whose value changed between two audit snapshots."""
     return {key for key in after if before.get(key) != after.get(key)}
-
-
-def _contact_quality(contact: Contact | ContactCreate) -> int:
-    score = 0
-    if contact.full_name or contact.first_name or contact.last_name:
-        score += 10
-    if contact.email:
-        score += 25
-    if contact.phone:
-        score += 20
-    if contact.linkedin_url:
-        score += 20
-    if contact.company_id or contact.company_name:
-        score += 15
-    if contact.job_title:
-        score += 10
-    if isinstance(contact, Contact):
-        if contact.last_verified:
-            score += 10
-    return min(100, score)

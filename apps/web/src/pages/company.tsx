@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   IconBuilding2,
   IconMapPin,
@@ -14,17 +14,23 @@ import {
   IconMail,
   IconExternalLink,
   IconArrowRight,
+  IconPencil,
+  IconArchive,
+  IconTrash2,
 } from "@/lib/icons";
 import { api } from "@/lib/api";
 import { Company, Contact } from "@/lib/types";
-import { ContactAvatar } from "@/components/crm";
+import { ContactAvatar, CompanyEditor } from "@/components/crm";
+import { toast } from "@/lib/store";
 
 
 export function CompanyDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [company, setCompany] = useState<Company | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     if (!id || isNaN(Number(id))) {
@@ -75,9 +81,73 @@ export function CompanyDetailPage() {
     );
   }
 
+  const toggleArchive = async () => {
+    try {
+      const updated = await api.post<Company>(
+        `/companies/${company.id}/${company.is_archived ? "restore" : "archive"}`,
+      );
+      setCompany(updated);
+      toast(updated.is_archived ? "Company archived" : "Company restored", "success");
+    } catch (e: any) {
+      toast(e?.data?.detail || "Could not update archive state", "error");
+    }
+  };
+
+  const removeCompany = async () => {
+    if (!window.confirm(`Delete ${company.name}? Linked contacts are kept but detached. This cannot be undone.`)) {
+      return;
+    }
+    try {
+      await api.delete(`/companies/${company.id}`);
+      toast("Company deleted", "success");
+      navigate("/companies");
+    } catch (e: any) {
+      toast(e?.data?.detail || "Delete failed", "error");
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-6">
+        <CompanyHeader company={company} />
+        <CompanyEditor
+          company={company}
+          onSaved={(updated) => setCompany(updated)}
+          onDelete={() => navigate("/companies")}
+          onCancel={() => setEditing(false)}
+        />
+        <button onClick={() => setEditing(false)} className="vbase-btn-ghost self-start text-sm">
+          Back to details
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <CompanyHeader company={company} />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => setEditing(true)} className="vbase-btn-primary flex items-center gap-1.5 text-sm">
+          <IconPencil className="h-4 w-4" />
+          Edit record
+        </button>
+        <Link to={`/companies/${company.id}/edit`} className="vbase-btn-secondary flex items-center gap-1.5 text-sm">
+          <IconExternalLink className="h-4 w-4" />
+          Open full editor
+        </Link>
+        <button
+          onClick={toggleArchive}
+          className="vbase-btn-ghost flex items-center gap-1.5 text-sm text-[var(--vbase-amber)]"
+        >
+          <IconArchive className="h-4 w-4" />
+          {company.is_archived ? "Restore" : "Archive"}
+        </button>
+        <button onClick={removeCompany} className="vbase-btn-danger flex items-center gap-1.5 text-sm">
+          <IconTrash2 className="h-4 w-4" />
+          Delete
+        </button>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <AttributeCard
@@ -154,6 +224,39 @@ export function CompanyDetailPage() {
           }
         />
         <AttributeCard
+          icon={<IconBuilding2 className="h-4 w-4" />}
+          label="Sub-industry"
+          value={
+            company.sub_industry ? (
+              <span className="text-sm text-[var(--vbase-slate800)]">{company.sub_industry}</span>
+            ) : (
+              <span className="text-sm text-[var(--vbase-slate400)]">—</span>
+            )
+          }
+        />
+        <AttributeCard
+          icon={<IconMapPin className="h-4 w-4" />}
+          label="State"
+          value={
+            company.state ? (
+              <span className="text-sm text-[var(--vbase-slate800)]">{company.state}</span>
+            ) : (
+              <span className="text-sm text-[var(--vbase-slate400)]">—</span>
+            )
+          }
+        />
+        <AttributeCard
+          icon={<IconArrowRight className="h-4 w-4" />}
+          label="Account status"
+          value={
+            company.company_status ? (
+              <span className="text-sm text-[var(--vbase-slate800)]">{company.company_status}</span>
+            ) : (
+              <span className="text-sm text-[var(--vbase-slate400)]">—</span>
+            )
+          }
+        />
+        <AttributeCard
           icon={<IconCalendar className="h-4 w-4" />}
           label="Founded"
           value={company.founded_year ? <span className="text-sm text-[var(--vbase-slate800)]">{company.founded_year}</span> : <span className="text-sm text-[var(--vbase-slate400)]">—</span>}
@@ -161,7 +264,13 @@ export function CompanyDetailPage() {
         <AttributeCard
           icon={<IconTag className="h-4 w-4" />}
           label="Funding stage"
-          value={company.funding_stage || company.company_status ? <span className="text-sm text-[var(--vbase-slate800)]">{company.funding_stage || company.company_status}</span> : <span className="text-sm text-[var(--vbase-slate400)]">—</span>}
+          value={
+            company.funding_stage ? (
+              <span className="text-sm text-[var(--vbase-slate800)]">{company.funding_stage}</span>
+            ) : (
+              <span className="text-sm text-[var(--vbase-slate400)]">—</span>
+            )
+          }
         />
         <AttributeCard
           icon={<IconCpu className="h-4 w-4" />}

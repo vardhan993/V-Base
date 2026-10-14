@@ -9,10 +9,24 @@ Two mechanisms exist, and both are free:
 | Mechanism | Artifact | Produced when | Best for |
 |---|---|---|---|
 | **Logical JSON snapshot** | `vbase_snapshot_<stamp>.json` | `pg_dump` is unavailable, or you ask for it | portable, inspectable, transactional restore through the app |
-| **Physical `pg_dump`** | `vbase_dump_<stamp>.sql` (custom format) | `pg_dump` is on `PATH` | full instance-level recovery with `pg_restore` |
+| **Physical `pg_dump`** | `vbase_dump_<stamp>.sql` (custom format) | `pg_dump` can be found | full instance-level recovery with `pg_restore` |
 
 The Backup page shows which one your host supports (`pg_dump: Available` or
 `Not installed`) and labels every artifact with its kind.
+
+`pg_dump` is located in three steps, so a developer install works without
+touching `PATH`:
+
+1. an absolute path in `PG_DUMP_PATH`;
+2. `PATH` itself (`shutil.which`, honouring `PATHEXT` on Windows);
+3. the standard install directories, newest PostgreSQL major first — e.g.
+   `C:\Program Files\PostgreSQL\<major>\bin` on Windows,
+   `/usr/lib/postgresql/<major>/bin` on Debian/Ubuntu, `/opt/homebrew/bin`.
+
+When it is found, `pg_dump` runs with only the binary's own directory added to a
+minimal environment, so the child can load `libpq` beside it and connect with
+`PGSSLMODE=prefer` (which still works against a local server without TLS). The
+resolved path is shown on the Backup page and in Settings → General.
 
 ---
 

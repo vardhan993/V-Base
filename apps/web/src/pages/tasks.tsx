@@ -168,7 +168,8 @@ export function TasksPage() {
                 <button
                   onClick={() => remove(task)}
                   aria-label={`Delete ${task.title}`}
-                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-[var(--vbase-slate400)] hover:bg-[var(--vbase-red)]/5 hover:text-[var(--vbase-red)]"
+                  title="Delete task"
+                  className="vbase-btn vbase-btn-icon-sm vbase-btn-danger-soft flex-shrink-0"
                 >
                   <IconTrash2 className="h-4 w-4" />
                 </button>

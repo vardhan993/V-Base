@@ -7,9 +7,11 @@ from sqlalchemy.exc import IntegrityError
 
 from nexus.database import SNAPSHOT_TABLES
 
-from .conftest import run_sql, run_sql_multi, sql_scalar, unique
+from .conftest import current_head_revision, run_sql, run_sql_multi, sql_scalar, unique
 
 EXPECTED_TABLES = {
+    "lead_tags",
+    "leads",
     "users",
     "sessions",
     "companies",
@@ -329,4 +331,4 @@ def test_backup_snapshot_excludes_session_tokens(auth_client):
     assert "sessions" not in payload["tables"]
     assert "users" in payload["tables"]
     assert payload["engine"] == "postgresql"
-    assert payload["schema_version"] == "0002_crm_stage_tasks"
+    assert payload["schema_version"] == current_head_revision()

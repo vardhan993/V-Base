@@ -95,6 +95,58 @@ class Settings(BaseSettings):
     pg_restore_path: str = "pg_restore"
 
     # ------------------------------------------------------------------
+    # Outbound email
+    # ------------------------------------------------------------------
+    #: Transactional provider used to send email from the CRM. Blank means
+    #: "use the default provider" (see nexus.core.email); the value can also be
+    #: stored in the settings table by an administrator.
+    email_provider: str = ""
+    #: Provider API key. Blank disables sending; a value stored in the settings
+    #: table is used as a fallback so setup can be finished from the UI.
+    email_api_key: str = ""
+    #: Default From address. Must be a verified sender or domain at the
+    #: provider, otherwise every send is rejected.
+    email_from: str = ""
+    #: Display name shown beside the From address. Blank means "use APP_NAME".
+    email_from_name: str = ""
+    #: Optional Reply-To; defaults to the signed-in user's own address.
+    email_reply_to: str = ""
+    #: HTTP timeout for a provider send, in seconds.
+    email_timeout_seconds: int = 15
+
+    #: --- Gmail (GOOGLE OAuth) -----------------------------------------
+    #: An OAuth client created in Google Cloud with the Gmail API enabled.
+    #: The refresh token is the credential that authorises sending; it is
+    #: normally obtained through Settings → General → Connect Gmail and stored
+    #: in the settings table rather than here.
+    gmail_client_id: str = ""
+    gmail_client_secret: str = ""
+    gmail_refresh_token: str = ""
+    #: Address mail is sent as. Must be the connected account, or an alias it
+    #: is permitted to send from.
+    gmail_sender: str = ""
+    #: Override the OAuth redirect URI. Set this when the API is behind a proxy
+    #: that rewrites the URL, so the value matches what is registered at Google.
+    gmail_redirect_uri: str = ""
+
+    #: Signing secret for the delivery webhook (``whsec_...``). Blank disables
+    #: the endpoint: an unverifiable webhook is worse than none, because anyone
+    #: could then rewrite the delivery status of every message sent.
+    email_webhook_secret: str = ""
+
+    #: --- Email sequences ------------------------------------------------
+    #: How often the app looks for steps that have come due. Progress lives in
+    #: the database, so this is a poll loop rather than a scheduler: nothing is
+    #: lost when a process restarts, it just picks the clock back up.
+    sequence_poll_seconds: int = 60
+    #: Steps sent per poll. Bounded so one poll cannot monopolise the process
+    #: or blast an entire list at once.
+    sequence_batch_size: int = 25
+    #: Turn off the background poller. The API still dispatches on demand, so a
+    #: deployment can drive sequences from a cron job instead of the app.
+    sequences_poll_enabled: bool = True
+
+    # ------------------------------------------------------------------
     # Auth / sessions
     # ------------------------------------------------------------------
     secret_key: str = INSECURE_SECRET

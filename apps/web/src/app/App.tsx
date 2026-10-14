@@ -17,6 +17,14 @@ import { CompaniesPage } from "@/pages/companies";
 import { CompanyDetailPage } from "@/pages/company";
 import { ContactPage } from "@/pages/contacts";
 import { ContactPage as ContactDetailPage } from "@/pages/contact";
+import { ContactEditPage } from "@/pages/contact-edit";
+import { ContactNewPage } from "@/pages/contact-new";
+import { CompanyNewPage } from "@/pages/company-new";
+import { CompanyEditPage } from "@/pages/company-edit";
+import { LeadsPage } from "@/pages/leads";
+import { LeadNewPage } from "@/pages/lead-new";
+import { LeadDetailPage } from "@/pages/lead";
+import { LeadEditPage } from "@/pages/lead-edit";
 import { AllRecordsPage } from "@/pages/all-records";
 import { ListsPage } from "@/pages/lists";
 import { TagsPage } from "@/pages/tags";
@@ -29,6 +37,7 @@ import { DuplicatesPage } from "@/pages/duplicates";
 import { DataQualityPage } from "@/pages/data-quality";
 import { AnalyticsPage } from "@/pages/analytics";
 import { ActivityPage } from "@/pages/activity";
+import { SequencesPage } from "@/pages/sequences";
 import { SettingsPage } from "@/pages/settings";
 import { Layout } from "@/components/layout";
 import { Loader2 } from "lucide-react";
@@ -92,10 +101,18 @@ function AppShell() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/pipeline" element={<PipelinePage />} />
               <Route path="/tasks" element={<TasksPage />} />
+              <Route path="/leads" element={<LeadsPage />} />
+              <Route path="/leads/new" element={<LeadNewPage />} />
+              <Route path="/leads/:id" element={<LeadDetailPage />} />
+              <Route path="/leads/:id/edit" element={<LeadEditPage />} />
               <Route path="/companies" element={<CompaniesPage />} />
+              <Route path="/companies/new" element={<CompanyNewPage />} />
               <Route path="/companies/:id" element={<CompanyDetailPage />} />
+              <Route path="/companies/:id/edit" element={<CompanyEditPage />} />
               <Route path="/contacts" element={<ContactPage />} />
+              <Route path="/contacts/new" element={<ContactNewPage />} />
               <Route path="/contacts/:id" element={<ContactDetailPage />} />
+              <Route path="/contacts/:id/edit" element={<ContactEditPage />} />
               <Route path="/all-records" element={<AllRecordsPage />} />
               <Route path="/lists" element={<ListsPage />} />
               <Route path="/tags" element={<TagsPage />} />
@@ -107,6 +124,7 @@ function AppShell() {
               <Route path="/duplicates" element={<DuplicatesPage />} />
               <Route path="/data-quality" element={<DataQualityPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/sequences" element={<SequencesPage />} />
               <Route path="/activity" element={<ActivityPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>

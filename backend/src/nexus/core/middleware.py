@@ -25,6 +25,12 @@ _PRE_AUTH_PATHS = {
     "/api/v1/auth/signup",
 }
 
+#: Endpoints called server-to-server by a provider rather than by a browser.
+#: They arrive with no Origin and no CSRF token, so the origin gate has to be
+#: skipped — which is only safe because the handler verifies an HMAC over the
+#: raw request body before it acts on anything.
+_SIGNATURE_VERIFIED_PREFIXES = ("/api/v1/email/webhook/",)
+
 #: Endpoints that verify a credential and therefore get the tight rate limit.
 #: Everything else under /api/v1/auth/ (``/auth/me``, ``/auth/sessions``,
 #: ``/auth/logout``) is a session probe that the SPA calls on every page load,
@@ -111,7 +117,11 @@ class CsrfOriginMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        if request.method in _UNSAFE_METHODS and request.url.path.startswith("/api/"):
+        if (
+            request.method in _UNSAFE_METHODS
+            and request.url.path.startswith("/api/")
+            and not request.url.path.startswith(_SIGNATURE_VERIFIED_PREFIXES)
+        ):
             origin = _normalise_origin(request.headers.get("origin")) or _normalise_origin(
                 request.headers.get("referer")
             )

@@ -21,6 +21,7 @@ from sqlalchemy import (
     func,
     or_,
     text,
+    true,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -44,6 +45,17 @@ def _json_object_column(nullable: bool = False, **kwargs: Any):
         nullable=nullable,
         default=dict,
         server_default=text("'{}'::jsonb"),
+        **kwargs,
+    )
+
+
+def _json_array_column(nullable: bool = False, **kwargs: Any):
+    """An ordered JSONB list (webhook events, for example)."""
+    return mapped_column(
+        JSONB,
+        nullable=nullable,
+        default=list,
+        server_default=text("'[]'::jsonb"),
         **kwargs,
     )
 
@@ -302,7 +314,9 @@ class Contact(SearchableMixin, Base):
     #: CRM pipeline stage: New, Contacted, Qualified, Proposal, Customer, Lost.
     #: Free text at the database level so future stages need no migration;
     #: the API validates against CRM_STAGES.
-    stage: Mapped[str] = mapped_column(String(50), nullable=False, default="New", server_default=text("'New'"), index=True)
+    stage: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="New", server_default=text("'New'"), index=True
+    )
     linkedin_url: Mapped[str | None] = mapped_column(String(500), nullable=True, index=True)
     company_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
     city: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
@@ -458,6 +472,182 @@ class FollowUpTask(Base):
     company: Mapped[Company | None] = relationship("Company", lazy="selectin")
 
 
+#: Lead lifecycle stages (qualification funnel), in order. The API validates
+#: against this vocabulary so a typo can never enter the column.
+LEAD_STAGES: tuple[str, ...] = ("New", "Working", "Qualified", "Unqualified", "Nurture", "Converted")
+
+#: Lead working statuses. ``Disqualified`` is the explicit exit and ``Converted``
+#: is set only by the conversion endpoint, never by hand.
+LEAD_STATUSES: tuple[str, ...] = (
+    "New",
+    "Open",
+    "Working",
+    "Contacted",
+    "Nurture",
+    "Disqualified",
+    "Converted",
+)
+
+#: Lead priorities, ordered from least to most urgent.
+LEAD_PRIORITIES: tuple[str, ...] = ("Low", "Medium", "High", "Urgent")
+
+
+class Lead(SearchableMixin, Base):
+    """A prospect tracked from discovery through qualification.
+
+    A lead is deliberately *not* a contact: it may never qualify, and the
+    conversion endpoint is what creates or links the durable Contact and
+    Company records. ``converted_contact_id`` / ``converted_company_id``
+    preserve the trail so a converted lead is never silently duplicated.
+    """
+
+    __tablename__ = "leads"
+
+    __search_trgm_columns__ = ("full_name", "email", "company_name", "job_title")
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    first_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    full_name: Mapped[str | None] = mapped_column(String(300), nullable=True, index=True)
+    job_title: Mapped[str | None] = mapped_column(String(300), nullable=True, index=True)
+    department: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    seniority: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(254), nullable=True, index=True)
+    email_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    phone_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    linkedin_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    website: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    company_name: Mapped[str | None] = mapped_column(String(300), nullable=True, index=True)
+    company_domain: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    industry: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    employee_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    company_size: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    state: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    lead_source: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    campaign: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    #: Qualification funnel position, validated against LEAD_STAGES.
+    lifecycle_stage: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="New", server_default=text("'New'"), index=True
+    )
+    #: Working status, validated against LEAD_STATUSES.
+    lead_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="New", server_default=text("'New'"), index=True
+    )
+    priority: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="Medium", server_default=text("'Medium'"), index=True
+    )
+    #: 0-100 fit + completeness score, and the per-rule breakdown that produced
+    #: it, so the number is always explainable rather than a black box.
+    lead_score: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False, index=True)
+    score_breakdown: Mapped[list[dict[str, Any]] | None] = _json_list_column()
+    score_updated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    company_id: Mapped[int | None] = mapped_column(
+        ForeignKey("companies.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    next_follow_up_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    consent_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    #: Set when the prospect asked not to be contacted; the UI surfaces it and
+    #: imports must not clear it.
+    do_not_contact: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    disqualified_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    converted_contact_id: Mapped[int | None] = mapped_column(
+        ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    converted_company_id: Mapped[int | None] = mapped_column(
+        ForeignKey("companies.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    converted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    data_quality_score: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    is_archived: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False, index=True
+    )
+    last_verified: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime.datetime] = _created_at_column()
+    updated_at: Mapped[datetime.datetime] = _updated_at_column()
+
+    search_vector: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed(
+            _tsvector_expr(
+                "full_name, first_name, last_name, job_title, department, email, phone, "
+                "linkedin_url, company_name, company_domain, industry, city, state, "
+                "country, campaign, notes"
+            ),
+            persisted=True,
+        ),
+        nullable=True,
+    )
+
+    __table_args__ = (
+        CheckConstraint("lead_score >= 0 AND lead_score <= 100", name="ck_leads_lead_score"),
+        CheckConstraint(
+            "data_quality_score >= 0 AND data_quality_score <= 100",
+            name="ck_leads_quality_score",
+        ),
+        CheckConstraint(
+            "employee_count IS NULL OR employee_count >= 0",
+            name="ck_leads_employee_count",
+        ),
+        CheckConstraint(
+            "priority IN ('Low', 'Medium', 'High', 'Urgent')",
+            name="ck_leads_priority",
+        ),
+        CheckConstraint(
+            "converted_at IS NULL OR lead_status = 'Converted'",
+            name="ck_leads_converted_consistency",
+        ),
+        Index("ix_leads_search_vector", "search_vector", postgresql_using="gin"),
+        _trgm_index("ix_leads_full_name_trgm", "full_name", "leads"),
+        _trgm_index("ix_leads_email_trgm", "email", "leads"),
+        _trgm_index("ix_leads_company_name_trgm", "company_name", "leads"),
+        Index("ix_leads_updated", "updated_at"),
+        Index("ix_leads_archived_updated", "is_archived", "updated_at"),
+        Index("ix_leads_stage_status", "lifecycle_stage", "lead_status"),
+        Index("ix_leads_follow_up", "next_follow_up_at"),
+    )
+
+    company: Mapped[Company | None] = relationship("Company", foreign_keys=[company_id], lazy="selectin")
+    owner: Mapped[User | None] = relationship("User", foreign_keys=[owner_id], lazy="selectin")
+    creator = relationship("User", foreign_keys=[created_by_id], backref="leads_created")
+    tags: Mapped[list[Tag]] = relationship("Tag", secondary="lead_tags", back_populates="leads", lazy="selectin")
+
+    @hybrid_property
+    def display_name(self) -> str:
+        if self.full_name:
+            return self.full_name
+        if self.first_name and self.last_name:
+            return f"{self.first_name} {self.last_name}".strip()
+        return self.first_name or self.last_name or self.email or ""
+
+    @hybrid_property
+    def tag_names(self) -> list[str]:
+        return [t.name for t in self.tags]
+
+    @hybrid_property
+    def is_converted(self) -> bool:
+        return self.converted_at is not None
+
+
+class LeadTag(Base):
+    __tablename__ = "lead_tags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id", ondelete="Cascade"), nullable=False, index=True)
+    tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="Cascade"), nullable=False, index=True)
+    created_at: Mapped[datetime.datetime] = _created_at_column()
+    updated_at: Mapped[datetime.datetime] = _updated_at_column()
+
+    __table_args__ = (UniqueConstraint("lead_id", "tag_id", name="uq_lead_tags_lead_tag"),)
+
+
 class Tag(Base):
     __tablename__ = "tags"
 
@@ -480,6 +670,7 @@ class Tag(Base):
     companies: Mapped[list[Company]] = relationship(
         "Company", secondary="company_tags", back_populates="tags", lazy="selectin"
     )
+    leads: Mapped[list[Lead]] = relationship("Lead", secondary="lead_tags", back_populates="tags", lazy="selectin")
 
 
 class ContactTag(Base):
@@ -732,6 +923,183 @@ class VerificationEvent(Base):
     __table_args__ = (Index("ix_verification_events_entity", "entity_type", "entity_id"),)
 
 
+#: Lifecycle of an outbound email. ``sent`` means the provider accepted it;
+#: the rest arrive asynchronously through the provider's webhook.
+EMAIL_STATUSES: tuple[str, ...] = (
+    "sent",
+    "delivered",
+    "opened",
+    "clicked",
+    "delivery_delayed",
+    "bounced",
+    "complained",
+    "failed",
+)
+
+#: Statuses that end the story: a later event must not walk them back.
+TERMINAL_EMAIL_STATUSES: tuple[str, ...] = ("bounced", "complained", "failed")
+
+
+class EmailMessage(Base):
+    """One outbound email plus the delivery events the provider reports.
+
+    The activity trail answers "who emailed whom"; this table answers "what
+    happened to it", which is what the webhook updates. Rows are matched to
+    webhook events on ``provider_message_id``.
+    """
+
+    __tablename__ = "email_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    #: The provider's own id for the message; the webhook correlation key.
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    to_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    from_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    body_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(30), default="sent", server_default=text("'sent'"), nullable=False, index=True
+    )
+    contact_id: Mapped[int | None] = mapped_column(
+        ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    sent_at: Mapped[datetime.datetime] = _created_at_column()
+    last_event_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Append-only audit of every event received, newest last.
+    events: Mapped[list[Any]] = _json_array_column()
+    created_at: Mapped[datetime.datetime] = _created_at_column()
+    updated_at: Mapped[datetime.datetime] = _updated_at_column()
+
+    __table_args__ = (
+        Index("ix_email_messages_contact_sent", "contact_id", "sent_at"),
+        Index("ix_email_messages_provider_message", "provider", "provider_message_id"),
+    )
+
+
+#: Where a contact stands in a sequence. ``active`` is the only status the
+#: dispatcher picks up; ``paused`` waits for a resume, the rest are final.
+SEQUENCE_ENROLLMENT_STATUSES: tuple[str, ...] = (
+    "active",
+    "paused",
+    "completed",
+    "cancelled",
+    "failed",
+)
+
+#: Statuses that mean "this contact is still working through the sequence".
+#: A contact may only hold one such enrollment per sequence.
+LIVE_SEQUENCE_STATUSES: tuple[str, ...] = ("active", "paused")
+
+
+class EmailSequence(Base):
+    """A named, ordered set of follow-up emails sent to a contact over time.
+
+    The sequence itself is just the template; who is currently moving through it
+    lives in :class:`EmailSequenceEnrollment`. Deleting the sequence cascades to
+    both, because a step with no sequence is not meaningful.
+    """
+
+    __tablename__ = "email_sequences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Pausing the sequence stops new sends without touching each enrollment.
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False, index=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime.datetime] = _created_at_column()
+    updated_at: Mapped[datetime.datetime] = _updated_at_column()
+
+    __table_args__ = (CheckConstraint("length(btrim(name)) > 0", name="ck_email_sequences_name_not_blank"),)
+
+    steps: Mapped[list[EmailSequenceStep]] = relationship(
+        "EmailSequenceStep",
+        back_populates="sequence",
+        cascade="all, delete-orphan",
+        order_by="EmailSequenceStep.position",
+        lazy="selectin",
+    )
+    enrollments: Mapped[list[EmailSequenceEnrollment]] = relationship(
+        "EmailSequenceEnrollment", back_populates="sequence", cascade="all, delete-orphan"
+    )
+
+
+class EmailSequenceStep(Base):
+    """One email in a sequence, plus how long to wait before sending it.
+
+    ``position`` is 0-based and contiguous; ``delay_days`` is the wait *before*
+    this step, so step 0 normally has a delay of 0 and goes out on enrollment.
+    """
+
+    __tablename__ = "email_sequence_steps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sequence_id: Mapped[int] = mapped_column(
+        ForeignKey("email_sequences.id", ondelete="Cascade"), nullable=False, index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    delay_days: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    subject: Mapped[str] = mapped_column(String(300), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = _created_at_column()
+    updated_at: Mapped[datetime.datetime] = _updated_at_column()
+
+    __table_args__ = (
+        UniqueConstraint("sequence_id", "position", name="uq_email_sequence_steps_sequence_position"),
+        CheckConstraint("position >= 0", name="ck_email_sequence_steps_position"),
+        CheckConstraint("delay_days >= 0", name="ck_email_sequence_steps_delay"),
+        CheckConstraint("length(btrim(subject)) > 0", name="ck_email_sequence_steps_subject_not_blank"),
+    )
+
+    sequence: Mapped[EmailSequence] = relationship("EmailSequence", back_populates="steps")
+
+
+class EmailSequenceEnrollment(Base):
+    """One contact's progress through one sequence.
+
+    ``current_step`` is the index of the *next* step to send, so a completed
+    enrollment has it equal to the number of steps. ``next_send_at`` is the only
+    clock the dispatcher reads.
+    """
+
+    __tablename__ = "email_sequence_enrollments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sequence_id: Mapped[int] = mapped_column(
+        ForeignKey("email_sequences.id", ondelete="Cascade"), nullable=False, index=True
+    )
+    #: Deleting the contact ends their enrollments: there is no one left to mail.
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="Cascade"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(
+        String(20), default="active", server_default=text("'active'"), nullable=False, index=True
+    )
+    current_step: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    next_send_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_sent_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Why the enrollment stopped, when it stopped for a reason other than "done".
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime.datetime] = _created_at_column()
+    updated_at: Mapped[datetime.datetime] = _updated_at_column()
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'paused', 'completed', 'cancelled', 'failed')",
+            name="ck_email_sequence_enrollments_status",
+        ),
+        CheckConstraint("current_step >= 0", name="ck_email_sequence_enrollments_step"),
+        # The dispatcher's only query: active enrollments that are due.
+        Index("ix_email_sequence_enrollments_due", "status", "next_send_at"),
+    )
+
+    #: selectin, like ``contact``: an async session cannot lazy-load on demand,
+    #: and every serializer here wants the sequence anyway.
+    sequence: Mapped[EmailSequence] = relationship("EmailSequence", back_populates="enrollments", lazy="selectin")
+    contact: Mapped[Contact] = relationship("Contact", lazy="selectin")
+
+
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
@@ -837,6 +1205,8 @@ SNAPSHOT_TABLES: tuple[str, ...] = (
     "employment_history",
     "contact_tags",
     "company_tags",
+    "leads",
+    "lead_tags",
     "lists",
     "list_contacts",
     "list_companies",
@@ -848,6 +1218,10 @@ SNAPSHOT_TABLES: tuple[str, ...] = (
     "duplicate_candidates",
     "verification_events",
     "follow_up_tasks",
+    "email_messages",
+    "email_sequences",
+    "email_sequence_steps",
+    "email_sequence_enrollments",
     "activity_logs",
     "audit_logs",
     "custom_fields",

@@ -6,7 +6,9 @@ interface ContactAvatarProps {
 }
 
 const SATURATION = 55;
-const LIGHTNESS = 52;
+//: Lightness comes from CSS so it can drop in dark mode — white initials on a
+//: 52%-lightness fill measured only ~2.2:1.
+const LIGHTNESS_VAR = "var(--vbase-avatar-lightness, 46%)";
 
 function initials(name: string): string {
   const parts = name.trim().split(/[\s]+/).filter(Boolean);
@@ -16,7 +18,7 @@ function initials(name: string): string {
 }
 
 function hueColor(hue: number): string {
-  return `hsl(${hue}, ${SATURATION}%, ${LIGHTNESS}%)`;
+  return `hsl(${hue}, ${SATURATION}%, ${LIGHTNESS_VAR})`;
 }
 
 const FALLBACK_HUES = [220, 170, 30, 340, 120, 280];
