@@ -272,6 +272,78 @@
     color: rgb(148 163 184 / 0.6);
   }
 
+  /* ------------------------------------------------------------------
+   * Auth screens — split hero shared by /login and /signup.
+   * ------------------------------------------------------------------ */
+
+  .vbase-auth-hero {
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(
+        1100px circle at -10% -20%,
+        color-mix(in srgb, var(--vbase-brand-a) 55%, transparent),
+        transparent 55%
+      ),
+      radial-gradient(
+        900px circle at 110% 120%,
+        color-mix(in srgb, var(--vbase-brand-b) 45%, transparent),
+        transparent 50%
+      ),
+      var(--vbase-sidebar-bg);
+    color: #fff;
+  }
+
+  /* Base heading styles carry the foreground text colour of whichever theme
+   * is active; inside the dark hero they would render near-black on near-black
+   * in light mode. Pin every heading and link inside the hero to white. */
+  .vbase-auth-hero h1,
+  .vbase-auth-hero h2,
+  .vbase-auth-hero h3,
+  .vbase-auth-hero a {
+    color: #fff;
+  }
+
+  /* Faint grid texture, echoing the "base" of data cells. */
+  .vbase-auth-hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgb(255 255 255 / 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(255 255 255 / 0.045) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(720px circle at 30% 30%, #000 30%, transparent 75%);
+    pointer-events: none;
+  }
+
+  .vbase-auth-card {
+    background-color: var(--vbase-bg);
+    border: 1px solid var(--vbase-border);
+    border-radius: 16px;
+    box-shadow:
+      0 10px 40px -12px rgb(2 6 23 / 0.35),
+      0 1px 3px 0 rgb(0 0 0 / 0.06);
+  }
+
+  .vbase-auth-feature {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .vbase-auth-feature-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 8px;
+    background: rgb(255 255 255 / 0.08);
+    color: #c7d2fe;
+  }
+
   .vbase-chip {
     display: inline-flex;
     align-items: center;
