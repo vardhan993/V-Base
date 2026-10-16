@@ -1181,6 +1181,123 @@ class CustomFieldValue(Base):
     )
 
 
+class Call(Base):
+    """A logged phone call against a contact or company.
+
+    Direction/outcome come from fixed vocabularies so reporting stays valid;
+    duration is seconds, entered as minutes by the UI and stored raw.
+    """
+
+    __tablename__ = "calls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id", ondelete="SET NULL"), nullable=True, index=True)
+    direction: Mapped[str] = mapped_column(String(20), nullable=False)  # inbound | outbound
+    outcome: Mapped[str] = mapped_column(String(30), nullable=False)  # connected | voicemail | missed | scheduled
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    phone_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scheduled_followup_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime.datetime] = _created_at_column()
+    updated_at: Mapped[datetime.datetime] = _updated_at_column()
+
+    __table_args__ = (
+        CheckConstraint("direction IN ('inbound','outbound')", name="ck_calls_direction"),
+        CheckConstraint("outcome IN ('connected','voicemail','missed','scheduled')", name="ck_calls_outcome"),
+        Index("ix_calls_contact_created", "contact_id", "created_at"),
+        Index("ix_calls_company_created", "company_id", "created_at"),
+    )
+
+    contact: Mapped[Contact | None] = relationship("Contact", lazy="selectin")
+    company: Mapped[Company | None] = relationship("Company", lazy="selectin")
+
+
+class Note(Base):
+    """A workspace note on a company, contact or lead.
+
+    ``pinned`` notes float to the top of the record page. Deleting the parent
+    detaches (SET NULL), never destroys the note.
+    """
+
+    __tablename__ = "notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id", ondelete="SET NULL"), nullable=True, index=True)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
+    lead_id: Mapped[int | None] = mapped_column(ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime.datetime] = _created_at_column()
+    updated_at: Mapped[datetime.datetime] = _updated_at_column()
+
+    __table_args__ = (
+        CheckConstraint("length(btrim(body)) > 0", name="ck_notes_body_not_blank"),
+        CheckConstraint(
+            "(contact_id IS NOT NULL)::int + (company_id IS NOT NULL)::int + (lead_id IS NOT NULL)::int = 1",
+            name="ck_notes_exactly_one_parent",
+        ),
+        Index("ix_notes_contact_created", "contact_id", "created_at"),
+        Index("ix_notes_company_created", "company_id", "created_at"),
+        Index("ix_notes_lead_created", "lead_id", "created_at"),
+    )
+
+    author: Mapped[User | None] = relationship("User", lazy="selectin")
+
+
+class Campaign(Base):
+    """A scheduled bulk-email blast to a contact list.
+
+    Recipients are frozen at creation so late list edits cannot surprise later
+    sends. Suppression (unsubscribed / bounced / replied) is enforced against
+    e-mail status at enqueue time.
+    """
+
+    __tablename__ = "campaigns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    subject: Mapped[str] = mapped_column(String(300), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
+    scheduled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    list_id: Mapped[int | None] = mapped_column(ForeignKey("lists.id", ondelete="SET NULL"), nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime.datetime] = _created_at_column()
+    updated_at: Mapped[datetime.datetime] = _updated_at_column()
+
+    __table_args__ = (
+        CheckConstraint("length(btrim(name)) > 0", name="ck_campaigns_name_not_blank"),
+        CheckConstraint(
+            "status IN ('draft', 'scheduled', 'sending', 'sent', 'cancelled')",
+            name="ck_campaigns_status",
+        ),
+        Index("ix_campaigns_status", "status"),
+    )
+
+
+class CampaignRecipient(Base):
+    """One frozen recipient of a campaign, with its delivery outcome."""
+
+    __tablename__ = "campaign_recipients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id", ondelete="Cascade"), nullable=False, index=True)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SetNull"), nullable=True, index=True)
+    email: Mapped[str] = mapped_column(String(254), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", server_default="pending")
+    sent_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "email", name="uq_campaign_recipients_campaign_email"),
+        CheckConstraint("status IN ('pending','sent','failed','skipped','suppressed')", name="ck_campaign_recipient_status"),
+    )
+
+
 class SettingsRow(Base):
     __tablename__ = "settings"
 
@@ -1218,6 +1335,10 @@ SNAPSHOT_TABLES: tuple[str, ...] = (
     "duplicate_candidates",
     "verification_events",
     "follow_up_tasks",
+    "calls",
+    "notes",
+    "campaigns",
+    "campaign_recipients",
     "email_messages",
     "email_sequences",
     "email_sequence_steps",

@@ -21,11 +21,13 @@ import {
   IconTrash2,
   IconArchive,
   IconSend,
+  IconPhone,
 } from "@/lib/icons";
 import { api } from "@/lib/api";
 import { Contact, Company } from "@/lib/types";
 import { ContactAvatar, StageBadge, EmailComposer, SentEmails } from "@/components/crm";
 import { ContactSequences } from "@/components/crm/contact-sequences";
+import { CallsCard, NotesCard, TimelineCard, VCardButton } from "@/components/crm/engagement";
 import { CRM_STAGES, parsePhone } from "@/lib/crm";
 import { toast } from "@/lib/store";
 import { ContactEditor } from "@/components/crm/contact-editor";
@@ -352,6 +354,7 @@ export function ContactPage() {
               <IconArchive className="h-4 w-4" />
               {contact.is_archived ? "Restore" : "Archive"}
             </button>
+            <VCardButton contactId={contact.id} />
             <button
               onClick={() => {
                 if (!window.confirm(`Delete this contact? This cannot be undone.`)) return;
@@ -436,12 +439,25 @@ export function ContactPage() {
         </div>
 
         <div className="md:col-span-2">
+          <DetailCard title="Calls & timeline" icon={<IconPhone className="h-4 w-4" />}>
+            <TimelineCard contactId={contact.id} />
+          </DetailCard>
+        </div>
+
+        <div className="md:col-span-2">
+          <DetailCard title="Calls" icon={<IconPhone className="h-4 w-4" />}>
+            <CallsCard contactId={contact.id} />
+          </DetailCard>
+        </div>
+
+        <div className="md:col-span-2">
           <DetailCard title="Notes" icon={<IconFileText className="h-4 w-4" />}>
             {contact.notes ? (
               <p className="text-sm text-[var(--vbase-slate700)] whitespace-pre-wrap">{contact.notes}</p>
-            ) : (
-              <span className="text-sm text-[var(--vbase-slate400)]">No notes</span>
-            )}
+            ) : null}
+            <div className={contact.notes ? "mt-3" : ""}>
+              <NotesCard contactId={contact.id} />
+            </div>
           </DetailCard>
         </div>
       </div>

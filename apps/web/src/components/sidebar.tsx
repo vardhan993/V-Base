@@ -66,6 +66,12 @@ const GROUPS: { label: string; items: { to: string; label: string; icon: any; ex
       { to: "/settings", label: "Settings", icon: IconSettings },
     ],
   },
+  {
+    label: "Campaigns",
+    items: [
+      { to: "/campaigns", label: "Campaigns", icon: IconMailPlus },
+    ],
+  },
 ];
 
 export function Sidebar() {

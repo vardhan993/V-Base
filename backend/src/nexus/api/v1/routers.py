@@ -6,7 +6,11 @@ from nexus.api.v1 import (
     activity,
     analytics,
     auth,
+    calls,
+    campaigns,
     companies,
+    exports,
+    notes,
     contacts,
     custom_fields,
     duplicates,
@@ -44,3 +48,7 @@ api_router.include_router(sequences.router)
 api_router.include_router(settings_router.router)
 api_router.include_router(custom_fields.router)
 api_router.include_router(saved_views.router)
+api_router.include_router(calls.router)
+api_router.include_router(notes.router)
+api_router.include_router(campaigns.router)
+api_router.include_router(exports.router)

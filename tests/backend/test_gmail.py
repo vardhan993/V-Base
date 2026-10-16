@@ -74,7 +74,12 @@ def test_state_round_trips_and_rejects_tampering():
     state = gmail_client.sign_state("secret-key", "nonce")
     assert gmail_client.verify_state("secret-key", state) is True
     assert gmail_client.verify_state("other-key", state) is False
-    assert gmail_client.verify_state("secret-key", state[:-1] + "0") is False
+    # The mutation must be guaranteed non-identical: when the signature's last
+    # hex char happens to be "0", replacing it with "0" would leave the state
+    # unchanged and verification would (correctly) succeed.
+    tampered = state[:-1] + ("0" if state[-1] != "0" else "1")
+    assert tampered != state
+    assert gmail_client.verify_state("secret-key", tampered) is False
     assert gmail_client.verify_state("secret-key", "not-a-state") is False
     assert gmail_client.verify_state("secret-key", "") is False
 

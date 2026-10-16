@@ -9,6 +9,11 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege: jobs only need to read the repository. This limits the
+# blast radius of the default GITHUB_TOKEN (no package/container writes).
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Backend tests (PostgreSQL)

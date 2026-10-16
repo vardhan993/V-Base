@@ -37,6 +37,7 @@ import { DuplicatesPage } from "@/pages/duplicates";
 import { DataQualityPage } from "@/pages/data-quality";
 import { AnalyticsPage } from "@/pages/analytics";
 import { ActivityPage } from "@/pages/activity";
+import { CampaignsPage } from "@/pages/campaigns";
 import { SequencesPage } from "@/pages/sequences";
 import { SettingsPage } from "@/pages/settings";
 import { Layout } from "@/components/layout";
@@ -114,8 +115,9 @@ function AppShell() {
               <Route path="/contacts/:id" element={<ContactDetailPage />} />
               <Route path="/contacts/:id/edit" element={<ContactEditPage />} />
               <Route path="/all-records" element={<AllRecordsPage />} />
-              <Route path="/lists" element={<ListsPage />} />
-              <Route path="/tags" element={<TagsPage />} />
+  <Route path="/lists" element={<ListsPage />} />
+  <Route path="/tags" element={<TagsPage />} />
+  <Route path="/campaigns" element={<CampaignsPage />} />
               <Route path="/saved-searches" element={<SavedSearchesPage />} />
               <Route path="/saved-views" element={<SavedViewsPage />} />
               <Route path="/custom-fields" element={<CustomFieldsPage />} />

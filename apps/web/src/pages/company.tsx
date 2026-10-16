@@ -17,10 +17,12 @@ import {
   IconPencil,
   IconArchive,
   IconTrash2,
-} from "@/lib/icons";
-import { api } from "@/lib/api";
+  IconPhone,
+  IconDownload,
+} from "@/lib/icons";import { api } from "@/lib/api";
 import { Company, Contact } from "@/lib/types";
 import { ContactAvatar, CompanyEditor } from "@/components/crm";
+import { CallsCard, NotesCard, TimelineCard } from "@/components/crm/engagement";
 import { toast } from "@/lib/store";
 
 
@@ -328,7 +330,37 @@ export function CompanyDetailPage() {
           ) : (
             <p className="text-sm text-[var(--vbase-slate400)]">No notes</p>
           )}
+          <div className={company.notes ? "mt-3" : ""}>
+            <NotesCard companyId={company.id} />
+          </div>
         </SectionCard>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <DetailCard title="Calls" icon={<IconPhone className="h-4 w-4" />}>
+          <CallsCard companyId={company.id} />
+        </DetailCard>
+
+        <DetailCard title="Calls & timeline" icon={<IconPhone className="h-4 w-4" />}>
+          <TimelineCard companyId={company.id} />
+        </DetailCard>
+      </div>
+
+      <div className="md:col-span-2">
+        <a
+          href={`/api/v1/companies/${company.id}/vcard`}
+          className="vbase-btn-ghost flex items-center gap-1.5 text-sm"
+          onClick={(e) => {
+            e.preventDefault();
+            const a = document.createElement("a");
+            a.href = `/api/v1/companies/${company.id}/vcard`;
+            a.rel = "noopener";
+            a.click();
+          }}
+        >
+          <IconDownload className="h-4 w-4" />
+          vCard
+        </a>
       </div>
 
       <ContactsSection company={company} contacts={contacts} />
@@ -402,6 +434,20 @@ function AttributeCard({ icon, label, value }: { icon: React.ReactNode; label: s
       <div className="min-w-0 flex-1">
         <p className="text-xs text-[var(--vbase-slate500)]">{label}</p>
         <div className="mt-1.5">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function DetailCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-[var(--vbase-border)] bg-[var(--vbase-bg-alt)] p-4">
+      <div className="mt-0.5 flex h-7 w-7 items-center justify-center rounded border border-[var(--vbase-border)] bg-[var(--vbase-bg)] text-[var(--vbase-slate500)]">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-[var(--vbase-slate500)]">{title}</p>
+        <div className="mt-1.5">{children}</div>
       </div>
     </div>
   );
