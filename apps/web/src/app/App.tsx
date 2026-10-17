@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { HashRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ThemeProvider } from "@/lib/theme";
 import { useAuthStore, useSidebarStore } from "@/lib/store";
@@ -8,40 +8,43 @@ import { Topbar } from "@/components/topbar";
 import { CommandPalette } from "@/components/command-palette";
 import { ToastStack } from "@/components/toast-stack";
 import { Toaster } from "@/components/ui/toaster";
-import { LoginPage } from "@/pages/login";
-import { SignupPage } from "@/pages/signup";
-import { DashboardPage } from "@/pages/dashboard";
-import { PipelinePage } from "@/pages/pipeline";
-import { TasksPage } from "@/pages/tasks";
-import { CompaniesPage } from "@/pages/companies";
-import { CompanyDetailPage } from "@/pages/company";
-import { ContactPage } from "@/pages/contacts";
-import { ContactPage as ContactDetailPage } from "@/pages/contact";
-import { ContactEditPage } from "@/pages/contact-edit";
-import { ContactNewPage } from "@/pages/contact-new";
-import { CompanyNewPage } from "@/pages/company-new";
-import { CompanyEditPage } from "@/pages/company-edit";
-import { LeadsPage } from "@/pages/leads";
-import { LeadNewPage } from "@/pages/lead-new";
-import { LeadDetailPage } from "@/pages/lead";
-import { LeadEditPage } from "@/pages/lead-edit";
-import { AllRecordsPage } from "@/pages/all-records";
-import { ListsPage } from "@/pages/lists";
-import { TagsPage } from "@/pages/tags";
-import { SavedSearchesPage } from "@/pages/saved-searches";
-import { SavedViewsPage } from "@/pages/saved-views";
-import { CustomFieldsPage } from "@/pages/custom-fields";
-import { BackupPage } from "@/pages/backup";
-import { ImportPage } from "@/pages/import";
-import { DuplicatesPage } from "@/pages/duplicates";
-import { DataQualityPage } from "@/pages/data-quality";
-import { AnalyticsPage } from "@/pages/analytics";
-import { ActivityPage } from "@/pages/activity";
-import { CampaignsPage } from "@/pages/campaigns";
-import { SequencesPage } from "@/pages/sequences";
-import { SettingsPage } from "@/pages/settings";
-import { Layout } from "@/components/layout";
 import { Loader2 } from "lucide-react";
+
+// Every page is code-split: initial load ships only the shell, auth pages and
+// the route you land on; the rest are fetched on first navigation.
+const LoginPage = lazy(() => import("@/pages/login").then((m) => ({ default: m.LoginPage })));
+const SignupPage = lazy(() => import("@/pages/signup").then((m) => ({ default: m.SignupPage })));
+const DashboardPage = lazy(() => import("@/pages/dashboard").then((m) => ({ default: m.DashboardPage })));
+const PipelinePage = lazy(() => import("@/pages/pipeline").then((m) => ({ default: m.PipelinePage })));
+const TasksPage = lazy(() => import("@/pages/tasks").then((m) => ({ default: m.TasksPage })));
+const CompaniesPage = lazy(() => import("@/pages/companies").then((m) => ({ default: m.CompaniesPage })));
+const CompanyDetailPage = lazy(() => import("@/pages/company").then((m) => ({ default: m.CompanyDetailPage })));
+const ContactsListPage = lazy(() => import("@/pages/contacts").then((m) => ({ default: m.ContactPage })));
+const ContactDetailPage = lazy(() => import("@/pages/contact").then((m) => ({ default: m.ContactPage })));
+const ContactEditPage = lazy(() => import("@/pages/contact-edit").then((m) => ({ default: m.ContactEditPage })));
+const ContactNewPage = lazy(() => import("@/pages/contact-new").then((m) => ({ default: m.ContactNewPage })));
+const CompanyNewPage = lazy(() => import("@/pages/company-new").then((m) => ({ default: m.CompanyNewPage })));
+const CompanyEditPage = lazy(() => import("@/pages/company-edit").then((m) => ({ default: m.CompanyEditPage })));
+const LeadsPage = lazy(() => import("@/pages/leads").then((m) => ({ default: m.LeadsPage })));
+const LeadNewPage = lazy(() => import("@/pages/lead-new").then((m) => ({ default: m.LeadNewPage })));
+const LeadDetailPage = lazy(() => import("@/pages/lead").then((m) => ({ default: m.LeadDetailPage })));
+const LeadEditPage = lazy(() => import("@/pages/lead-edit").then((m) => ({ default: m.LeadEditPage })));
+const AllRecordsPage = lazy(() => import("@/pages/all-records").then((m) => ({ default: m.AllRecordsPage })));
+const ListsPage = lazy(() => import("@/pages/lists").then((m) => ({ default: m.ListsPage })));
+const TagsPage = lazy(() => import("@/pages/tags").then((m) => ({ default: m.TagsPage })));
+const SavedSearchesPage = lazy(() => import("@/pages/saved-searches").then((m) => ({ default: m.SavedSearchesPage })));
+const SavedViewsPage = lazy(() => import("@/pages/saved-views").then((m) => ({ default: m.SavedViewsPage })));
+const CustomFieldsPage = lazy(() => import("@/pages/custom-fields").then((m) => ({ default: m.CustomFieldsPage })));
+const BackupPage = lazy(() => import("@/pages/backup").then((m) => ({ default: m.BackupPage })));
+const ImportPage = lazy(() => import("@/pages/import").then((m) => ({ default: m.ImportPage })));
+const DuplicatesPage = lazy(() => import("@/pages/duplicates").then((m) => ({ default: m.DuplicatesPage })));
+const DataQualityPage = lazy(() => import("@/pages/data-quality").then((m) => ({ default: m.DataQualityPage })));
+const AnalyticsPage = lazy(() => import("@/pages/analytics").then((m) => ({ default: m.AnalyticsPage })));
+const ActivityPage = lazy(() => import("@/pages/activity").then((m) => ({ default: m.ActivityPage })));
+const CampaignsPage = lazy(() => import("@/pages/campaigns").then((m) => ({ default: m.CampaignsPage })));
+const SequencesPage = lazy(() => import("@/pages/sequences").then((m) => ({ default: m.SequencesPage })));
+const SettingsPage = lazy(() => import("@/pages/settings").then((m) => ({ default: m.SettingsPage })));
+const Layout = lazy(() => import("@/components/layout").then((m) => ({ default: m.Layout })));
 
 function AuthLoader({ children }: { children:React.ReactNode }) {
   const { user, loading, setUser, setToken, setLoading } = useAuthStore();
@@ -97,7 +100,15 @@ function AppShell() {
         {!isAuthRoute && <Topbar />}
         <main className="flex-1 p-6 overflow-auto">
           <Routes>
-            <Route element={<AuthLoader><Layout /></AuthLoader>}>
+            <Route
+              element={
+                <AuthLoader>
+                  <Suspense fallback={<LoadingScreen />}>
+                    <Layout />
+                  </Suspense>
+                </AuthLoader>
+              }
+            >
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/pipeline" element={<PipelinePage />} />
@@ -110,7 +121,7 @@ function AppShell() {
               <Route path="/companies/new" element={<CompanyNewPage />} />
               <Route path="/companies/:id" element={<CompanyDetailPage />} />
               <Route path="/companies/:id/edit" element={<CompanyEditPage />} />
-              <Route path="/contacts" element={<ContactPage />} />
+              <Route path="/contacts" element={<ContactsListPage />} />
               <Route path="/contacts/new" element={<ContactNewPage />} />
               <Route path="/contacts/:id" element={<ContactDetailPage />} />
               <Route path="/contacts/:id/edit" element={<ContactEditPage />} />
@@ -130,8 +141,22 @@ function AppShell() {
               <Route path="/activity" element={<ActivityPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/signup" element={<SignupPage />} />
+            <Route
+              path="/login"
+              element={
+                <Suspense fallback={<LoadingScreen />}>
+                  <LoginPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/signup"
+              element={
+                <Suspense fallback={<LoadingScreen />}>
+                  <SignupPage />
+                </Suspense>
+              }
+            />
           </Routes>
         </main>
       </div>
