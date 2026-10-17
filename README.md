@@ -240,6 +240,8 @@ Full instructions with verified free-tier limits and sources:
   is unsupported there (no `greenlet`) and the pandas/openpyxl import stack is not
   available as WebAssembly wheels — see [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md).
 
+Running the deployed service (deploys, secret rotation, restore drills,
+incident card): **[docs/GO_LIVE_RUNBOOK.md](docs/GO_LIVE_RUNBOOK.md)**.
 Backups, restores and disaster recovery: **[docs/BACKUP.md](docs/BACKUP.md)**.
 Sending email from a contact record: **[docs/EMAIL.md](docs/EMAIL.md)**.
 
