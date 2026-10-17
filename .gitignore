@@ -65,3 +65,4 @@ apps/web/.wrangler/
 
 # Scratch/runtime output that must never be committed.
 tmp/
+.local-secrets/

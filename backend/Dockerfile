@@ -30,7 +30,10 @@ RUN pip install --upgrade pip setuptools wheel \
  && pip install .
 
 COPY alembic.ini ./
-COPY alembic ./alembic
+
+# Migrations ship inside the nexus package (src/nexus/migrations); see
+# nexus.commands.migrate, which resolves the script location from the
+# installed package so no filesystem layout is assumed.
 
 # Run as an unprivileged user; the app never needs to write outside its
 # configured uploads/backups directories.

@@ -30,7 +30,7 @@ bills you — quotas throttle, not charge.
 
 ```bash
 cd backend
-DATABASE_URL=postgresql+asyncpg://...@ep-xxxx-pooler.../neondb python -m alembic upgrade head
+DATABASE_URL=postgresql+asyncpg://...@ep-xxxx-pooler.../neondb python -m nexus.commands.migrate upgrade
 ```
 
 Then confirm models still match the database:

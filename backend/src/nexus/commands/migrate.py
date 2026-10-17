@@ -1,7 +1,10 @@
 """Alembic wrapper used by scripts, CI and the hosting provider's start command.
 
-Deliberately small: it locates ``alembic.ini`` next to the package root so the
-command works no matter what the current working directory is.
+Deliberately small: the migrations live inside the ``nexus`` package
+(``nexus/migrations``) so they are shipped with the wheel. The script
+location is therefore resolved from the installed package rather than the
+source checkout, which keeps the command working both in development and in
+a deployed pip-installed environment with no filesystem assumptions.
 """
 
 from __future__ import annotations
@@ -15,14 +18,41 @@ from nexus.core.config import settings
 
 logger = logging.getLogger("vbase.migrate")
 
-BACKEND_ROOT = Path(__file__).resolve().parents[3]
+#: ``nexus/commands/migrate.py`` -> ``nexus/migrations`` (works in a source
+#: checkout and inside site-packages alike).
+SCRIPT_LOCATION = Path(__file__).resolve().parents[1] / "migrations"
 
 
 def _alembic_config():
     from alembic.config import Config
 
-    config = Config(str(BACKEND_ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
+    ini = Path.cwd() / "alembic.ini"  # used only for its logging section
+    if ini.is_file():
+        config = Config(str(ini))
+    else:
+        config = Config()
+        config.config_file_name = None
+        # Match the logging section of alembic.ini so output is not swallowed.
+        import logging.config
+
+        logging.config.dictConfig({
+            "version": 1,
+            "disable_existing_loggers": False,
+            "loggers": {
+                "alembic": {"level": "INFO", "handlers": []},
+                "sqlalchemy": {"level": "WARNING", "handlers": []},
+                "": {"level": "INFO", "handlers": ["console"], "propagate": False},
+            },
+            "handlers": {
+                "console": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "generic",
+                    "stream": "ext://sys.stderr",
+                },
+            },
+            "formatters": {"generic": {"format": "%(levelname)-5.5s [%(name)s] %(message)s"}},
+        })
+    config.set_main_option("script_location", str(SCRIPT_LOCATION))
     config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
     return config
 

@@ -44,6 +44,10 @@ vbase-backup = "nexus.commands.backup:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# Alembic needs the revision template when creating new migrations.
+"nexus.migrations" = ["*.mako"]
+
 [tool.pytest.ini_options]
 testpaths = ["../tests/backend", "tests"]
 pythonpath = ["src"]

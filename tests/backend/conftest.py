@@ -85,7 +85,7 @@ def _reset_schema() -> None:
     asyncio.run(drop_and_create())
 
     config = Config(str(BACKEND / "alembic.ini"))
-    config.set_main_option("script_location", str(BACKEND / "alembic"))
+    config.set_main_option("script_location", str(BACKEND / "src/nexus/migrations"))
     command.upgrade(config, "head")
 
 
@@ -184,7 +184,7 @@ def current_head_revision() -> str:
     from alembic.script import ScriptDirectory
 
     config = Config(str(BACKEND / "alembic.ini"))
-    config.set_main_option("script_location", str(BACKEND / "alembic"))
+    config.set_main_option("script_location", str(BACKEND / "src/nexus/migrations"))
     return ScriptDirectory.from_config(config).get_current_head()
 
 

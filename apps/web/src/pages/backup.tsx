@@ -495,7 +495,7 @@ function Playbook({ host }: { host: string }) {
         icon: <IconHistory className="h-4 w-4" />,
         title: "4 · Re-apply schema migrations",
         body: "Migrations are the only supported way to change the schema; they are idempotent to the current head.",
-        command: "alembic -c backend/alembic.ini upgrade head",
+        command: "cd backend && python -m nexus.commands.migrate upgrade",
       },
       {
         icon: <IconShieldCheck className="h-4 w-4" />,
