@@ -1,0 +1,48 @@
+name: Keep-alive
+
+# Render free web services spin down after ~15 minutes without inbound
+# traffic and take ~1 minute to wake up, which makes the first user of the
+# next session wait. A GitHub Actions scheduled workflow pings the API's
+# readiness endpoint every 10 minutes so the instance never goes idle.
+#
+# Notes on the design:
+#   * /health/ready is deliberately cheap (a single SELECT 1 through the
+#     pooled engine) and is also what keeps Neon's free compute from
+#     auto-suspending — see system_notes/deployment_report_2026-10-17.md.
+#   * `schedule` runs on the default branch only and GitHub may delay runs
+#     by a few minutes under load; that slack is fine for a 15-minute
+#     idle timeout.
+#   * The ping URL lives in a repository variable (not a secret — it is a
+#     public endpoint) so changing hosts does not mean editing this file.
+#     Variable:  Settings → Secrets and variables → Actions → Variables →
+#     RENDER_HEALTH_URL   (fallback below keeps the workflow usable before
+#     the variable is set).
+#   * 6 consecutive failures trigger nothing here (Actions does not page
+#     humans); check the badge or Actions tab if you suspect an outage.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *" # every 10 minutes
+  workflow_dispatch: {} # manual trigger for testing
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    name: Ping /health/ready
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the API
+        run: |
+          URL="${{ vars.RENDER_HEALTH_URL || 'https://vbase-api.onrender.com/health/ready' }}"
+          HTTP=$(curl -sS --max-time 60 --retry 2 --retry-delay 5 -o /dev/null -w '%{http_code}' "$URL")
+          echo "GET $URL -> $HTTP"
+          if [ "$HTTP" != "200" ]; then
+            echo "::warning::backend responded with HTTP $HTTP (expected 200)"
+            exit 1
+          fi
