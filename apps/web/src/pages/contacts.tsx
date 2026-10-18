@@ -182,6 +182,9 @@ export function ContactPage() {
                       />
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--vbase-slate500)]">
+                      ID
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--vbase-slate500)]">
                       Contact
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--vbase-slate500)]">
@@ -276,6 +279,15 @@ function ContactRow({
           aria-label={`Select ${name}`}
           className="h-4 w-4 rounded border-[var(--vbase-border)] text-[var(--vbase-indigo)]"
         />
+      </td>
+      <td className="px-3 py-3">
+        <a
+          href={`#/contacts/${contact.id}`}
+          title={`Record ID ${contact.id} — click to open`}
+          className="rounded bg-[var(--vbase-muted-bg)] px-1.5 py-0.5 font-mono text-xs text-[var(--vbase-slate600)] transition-colors hover:text-[var(--vbase-indigo)]"
+        >
+          #{contact.id}
+        </a>
       </td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-3 min-w-0">

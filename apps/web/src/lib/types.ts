@@ -5,6 +5,8 @@ export interface User {
   full_name?: string | null;
   is_active: boolean;
   is_superuser: boolean;
+  /** Billing plan key: admin (owner, free) / starter / growth / scale. */
+  plan?: string;
   preferences: Record<string, any>;
   created_at?: string;
   updated_at?: string;

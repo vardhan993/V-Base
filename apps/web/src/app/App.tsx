@@ -44,6 +44,7 @@ const ActivityPage = lazy(() => import("@/pages/activity").then((m) => ({ defaul
 const CampaignsPage = lazy(() => import("@/pages/campaigns").then((m) => ({ default: m.CampaignsPage })));
 const SequencesPage = lazy(() => import("@/pages/sequences").then((m) => ({ default: m.SequencesPage })));
 const SettingsPage = lazy(() => import("@/pages/settings").then((m) => ({ default: m.SettingsPage })));
+const BillingPage = lazy(() => import("@/pages/billing").then((m) => ({ default: m.BillingPage })));
 const Layout = lazy(() => import("@/components/layout").then((m) => ({ default: m.Layout })));
 
 function AuthLoader({ children }: { children:React.ReactNode }) {
@@ -96,7 +97,11 @@ function AppShell() {
   return (
     <div className="flex h-screen bg-[var(--vbase-bg)]">
       {!isAuthRoute && <Sidebar />}
-      <div className={`flex flex-1 flex-col transition-all duration-200 ${collapsed ? "ml-14" : "ml-0"}`}>
+      <div
+        className={`flex flex-1 flex-col transition-all duration-200 md:ml-[224px] ${
+          collapsed ? "md:ml-[68px]" : ""
+        }`}
+      >
         {!isAuthRoute && <Topbar />}
         <main className="flex-1 p-6 overflow-auto">
           <Routes>
@@ -140,6 +145,7 @@ function AppShell() {
               <Route path="/sequences" element={<SequencesPage />} />
               <Route path="/activity" element={<ActivityPage />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/billing" element={<BillingPage />} />
             </Route>
             <Route
               path="/login"

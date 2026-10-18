@@ -86,6 +86,8 @@ async def signup(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already taken")
 
+    from nexus.core.plans import plan_for_email
+
     user = User(
         email=email,
         username=username,
@@ -93,6 +95,8 @@ async def signup(
         full_name=body.full_name,
         is_active=True,
         is_superuser=False,
+        # Admin emails (OWNER) start on the permanent free admin plan.
+        plan=plan_for_email(email),
         preferences={},
     )
     session.add(user)
@@ -202,6 +206,7 @@ async def me(
         username=current_user.username,
         full_name=current_user.full_name,
         is_active=current_user.is_active,
+        plan=current_user.plan,
         is_superuser=current_user.is_superuser,
         preferences=current_user.preferences or {},
         session=SessionInfo(

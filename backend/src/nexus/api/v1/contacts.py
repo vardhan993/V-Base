@@ -217,13 +217,27 @@ async def export_contacts(
 async def create_contact(
     body: ContactCreate, session: AsyncSession = Depends(get_session), current_user=Depends(get_current_user)
 ):
+    from nexus.api.v1.billing import enforce_record_quota
+
+    await enforce_record_quota(session, current_user)
     company = None
     if body.company_name:
         stmt = select(Company).where(Company.name.ilike(body.company_name)).limit(1)
         result = await session.execute(stmt)
         company = result.scalar_one_or_none()
+    payload = body.model_dump()
+    # full_name is the denormalized display name most views sort and search
+    # on. A contact created from first/last must not end up with an empty one.
+    if not (payload.get("full_name") or "").strip():
+        derived = " ".join(
+            part
+            for part in ((payload.get("first_name") or "").strip(), (payload.get("last_name") or "").strip())
+            if part
+        )
+        if derived:
+            payload["full_name"] = derived
     contact = Contact(
-        **body.model_dump(), company=company, created_by_id=current_user.id, data_quality_score=_contact_quality(body)
+        **payload, company=company, created_by_id=current_user.id, data_quality_score=_contact_quality(body)
     )
     session.add(contact)
     await session.flush()
@@ -295,6 +309,11 @@ async def update_contact(
         if key == "tags":
             continue
         setattr(contact, key, value)
+    # Keep the denormalized display name in step with name edits.
+    if not (contact.full_name or "").strip() and (contact.first_name or contact.last_name):
+        contact.full_name = " ".join(
+            p for p in ((contact.first_name or "").strip(), (contact.last_name or "").strip()) if p
+        )
     if company:
         await attach_contact_counts_for_company(session, company)
         contact.company = company

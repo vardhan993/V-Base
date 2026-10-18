@@ -50,6 +50,9 @@ export interface SidebarState {
   collapsed: boolean;
   toggle: () => void;
   setCollapsed: (collapsed:boolean) => void;
+  /** Off-canvas drawer visibility on phone-width screens. */
+  mobileOpen: boolean;
+  setMobileOpen: (open:boolean) => void;
 }
 
 export const useSidebarStore = create<SidebarState>()(
@@ -58,6 +61,8 @@ export const useSidebarStore = create<SidebarState>()(
       collapsed: false,
       toggle: () => set((s) => ({ collapsed: !s.collapsed })),
       setCollapsed: (collapsed) => set({ collapsed }),
+      mobileOpen: false,
+      setMobileOpen: (open) => set({ mobileOpen: open }),
     }),
     { name: "vbase-sidebar", storage: createJSONStorage(() => localStorage) }
   )

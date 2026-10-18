@@ -8,11 +8,12 @@ import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -317,27 +318,109 @@ async def import_plan(
 
     Nothing is written. This is what the wizard shows before the user commits,
     and it is the guarantee behind "never overwrite existing values silently".
+
+    This is O(number of bulk queries), not O(rows × queries): all rows in the
+    file are matched in memory against a handful of chunked ``IN`` queries,
+    instead of issuing two-or-more sequential queries per row. The decision
+    logic is identical to ``_plan_row``; the dry-run samples up to ``limit``
+    items evenly across the whole file while the counts cover every row.
     """
     job = await _owned_job(session, job_id, current_user.id)
-    df = _load_frame(job)
+    df = await run_in_threadpool(_load_frame, job)
     total_rows = int(df.shape[0])
 
     counts = {"added": 0, "updated": 0, "unchanged": 0, "skipped": 0, "invalid": 0, "duplicate": 0}
-    items: list[dict[str, Any]] = []
+    plan_rows: list[tuple[int, tuple[str, Any]]] = []
+    invalid_items_shown = 0
 
     for idx, row in df.iterrows():
         raw_row = {str(col): _coerce_value(row[col]) for col in df.columns}
         normalized = _normalize_row(raw_row, job.mapping or {})
         if not normalized:
             counts["invalid"] += 1
-            if len(items) < limit:
-                items.append({"row_index": int(idx), "action": "invalid", "reason": "No mapped values", "changes": {}})
+            if invalid_items_shown < limit:
+                plan_rows.append(
+                    (idx, ("inv", {"action": "invalid", "entity": None, "reason": "No mapped values", "changes": {}}))
+                )
+                invalid_items_shown += 1
             continue
+        plan_rows.append((idx, ("row", normalized)))
 
-        plan = await _plan_row(session, normalized, job.strategy, job.update_mode)
+    contact_email_map, contact_name_map, contact_fl_map = await _bulk_load_contacts(session, plan_rows)
+    company_domain_map, company_name_map = await _bulk_load_companies(session, plan_rows)
+    custom_fields_map = await _bulk_load_custom_fields(session)
+    contact_ids: set[int] = set()
+    company_ids: set[int] = set()
+
+    def _resolve(entry: tuple[str, Any]) -> tuple[str, Any, dict[str, Any]] | None:
+        """Returns (entity, existing, normalized) for a valid row, else None."""
+        tag, payload = entry
+        if tag != "row":
+            return None
+        normalized: dict[str, Any] = payload
+        entity = "company" if _looks_like_company(normalized) else ("contact" if _looks_like_contact(normalized) else None)
+        if entity is None:
+            return None
+        if entity == "contact":
+            existing = _match_contact_locally(normalized, contact_email_map, contact_name_map, contact_fl_map)
+        else:
+            existing = _match_company_locally(normalized, company_domain_map, company_name_map)
+        if existing is not None:
+            (contact_ids if entity == "contact" else company_ids).add(existing.id)
+        return entity, existing, normalized
+
+    custom_values = await _bulk_load_custom_values(session, contact_ids, company_ids)
+
+    for _idx, _entry in plan_rows:
+        resolved = _resolve(_entry)
+        if resolved is None:
+            continue
+        entity, existing, normalized = resolved
+        plan = _plan_action_locally(
+            existing, entity, normalized, job.strategy, job.update_mode,
+            custom_fields_map, custom_values,
+        )
         counts[plan["action"]] = counts.get(plan["action"], 0) + 1
-        if len(items) < limit:
-            items.append({"row_index": int(idx), **plan})
+
+    def _item(idx: int, plan: dict[str, Any]) -> dict[str, Any]:
+        item: dict[str, Any] = {
+            "row_index": int(idx),
+            "action": plan["action"],
+            "changes": plan.get("changes") or {},
+            "reason": plan.get("reason"),
+        }
+        if plan.get("entity"):
+            item["entity"] = plan["entity"]
+        if plan.get("duplicate_of") is not None:
+            item["duplicate_of"] = plan["duplicate_of"]
+        return item
+
+    # Planned decisions per row (plain dict for 'row' entries), in file order.
+    decided: list[tuple[int, tuple[str, Any]]] = []
+    for idx, entry in plan_rows:
+        tag, payload = entry
+        if tag == "inv":
+            decided.append((idx, entry))
+            continue
+        resolved = _resolve(entry)
+        if resolved is None:
+            continue
+        entity, existing, normalized = resolved
+        plan = _plan_action_locally(
+            existing, entity, normalized, job.strategy, job.update_mode,
+            custom_fields_map, custom_values,
+        )
+        decided.append((idx, ("inv", plan)))  # reuse 'inv' tag: a dict payload = ready plan
+
+    # Evenly sample up to `limit` items across the whole file so the review
+    # page stays representative and constant-sized no matter the row count.
+    keep = min(limit, len(decided))
+    if keep == 0:
+        items: list[dict[str, Any]] = []
+    else:
+        step = len(decided) / keep
+        picked = {min(int(i * step), len(decided) - 1) for i in range(keep)}
+        items = [_item(decided[i][0], decided[i][1][1]) for i in sorted(picked)]
 
     return {
         "job_id": job.id,
@@ -378,7 +461,7 @@ async def run_import(
 
     # _load_frame re-validates the upload path and reads the mapping, so an
     # import with no mapping fails here rather than half way through.
-    df = _load_frame(job)
+    df = await run_in_threadpool(_load_frame, job)
     job.status = "running"
     job.started_at = _utcnow()
     job.rows_total = int(df.shape[0])
@@ -398,19 +481,106 @@ async def run_import(
         "duplicate": 0,
     }
 
+    # Preload every matching candidate in a handful of bulk queries — the run
+    # must not do 2+ sequential queries per row or large files take minutes.
+    plan_rows: list[tuple[int, tuple[str, Any], dict[str, Any]]] = []
+    for idx, row in df.iterrows():
+        raw_row = {str(col): _coerce_value(row[col]) for col in df.columns}
+        normalized = _normalize_row(raw_row, job.mapping or {})
+        plan_rows.append((idx, ("row", normalized) if normalized else ("inv", {}), raw_row))
+    contact_email_map, contact_name_map, contact_fl_map = await _bulk_load_contacts(
+        session, [(idx, e) for idx, e, _ in plan_rows]
+    )
+    company_domain_map, company_name_map = await _bulk_load_companies(
+        session, [(idx, e) for idx, e, _ in plan_rows]
+    )
+    custom_fields_map = await _bulk_load_custom_fields(session)
+
+    # Records created during THIS run must be findable by later rows without
+    # re-querying the database (in-file dedupe/links stay correct).
+    new_contacts_email: dict[str, Contact] = {}
+    new_contacts_name: dict[str, Contact] = {}
+    new_companies_domain: dict[str, Company] = {}
+    new_companies_name: dict[str, Company] = {}
+
+    def _match(normalized: dict[str, Any], entity: str):
+        if entity == "contact":
+            email = (normalized.get("email") or "").strip().lower()
+            if email:
+                hit = new_contacts_email.get(email)
+                if hit is not None:
+                    return hit
+            full_name = (_full_name_for(normalized) or "").lower()
+            if full_name:
+                hit = new_contacts_name.get(full_name)
+                if hit is not None:
+                    return hit
+            return _match_contact_locally(normalized, contact_email_map, contact_name_map, contact_fl_map)
+        domain = (normalized.get("domain") or "").strip().lower().removeprefix("www.")
+        host = _domain_from_url(normalized.get("website"))
+        if domain and domain in new_companies_domain:
+            return new_companies_domain[domain]
+        if host and host in new_companies_domain:
+            return new_companies_domain[host]
+        name = (normalized.get("company_name") or "").strip().lower()
+        if name and name in new_companies_name:
+            return new_companies_name[name]
+        return _match_company_locally(normalized, company_domain_map, company_name_map)
+
+    # Custom-field value state for rows matched against PRE-EXISTING records.
+    contact_ids: set[int] = set()
+    company_ids: set[int] = set()
+    for _idx, (tag, normalized), _raw in plan_rows:
+        if tag != "row":
+            continue
+        _entity = "company" if _looks_like_company(normalized) else (
+            "contact" if _looks_like_contact(normalized) else None
+        )
+        if _entity == "contact":
+            if (hit := _match_contact_locally(normalized, contact_email_map, contact_name_map, contact_fl_map)):
+                contact_ids.add(hit.id)
+        elif _entity == "company":
+            if (hit := _match_company_locally(normalized, company_domain_map, company_name_map)):
+                company_ids.add(hit.id)
+    custom_values = await _bulk_load_custom_values(session, contact_ids, company_ids)
+
+    def _register(created: Any, entity: str, normalized: dict[str, Any]) -> None:
+        """Make a record created during this run findable by later rows."""
+        if entity == "contact":
+            if created.email:
+                new_contacts_email[created.email.strip().lower()] = created
+            name = _full_name_for(normalized)
+            if name:
+                new_contacts_name[name.lower()] = created
+        else:
+            if created.domain:
+                new_companies_domain[created.domain.strip().lower().removeprefix("www.")] = created
+            if created.name:
+                new_companies_name[created.name.strip().lower()] = created
+            if normalized.get("company_name"):
+                new_companies_name[str(normalized["company_name"]).strip().lower()] = created
+
     try:
-        for idx, row in df.iterrows():
-            raw_row = {str(col): _coerce_value(row[col]) for col in df.columns}
-            normalized = _normalize_row(raw_row, job.mapping or {})
+        for idx, (tag, normalized), raw_row in plan_rows:
             job.rows_processed = (job.rows_processed or 0) + 1
 
-            if not normalized:
+            if tag != "row":
                 counters["invalid"] += 1
                 _record_row(session, job, idx, raw_row, {}, "invalid", "No mapped values", None, None)
                 _record_error(session, job, idx, None, None, "No mapped values", "error")
                 continue
 
-            plan = await _plan_row(session, normalized, job.strategy, job.update_mode)
+            entity = "company" if _looks_like_company(normalized) else ("contact" if _looks_like_contact(normalized) else None)
+            if entity is None:
+                counters["invalid"] += 1
+                reason = "Could not classify row as company or contact"
+                _record_row(session, job, idx, raw_row, normalized, "invalid", reason, None, None)
+                _record_error(session, job, idx, None, None, reason, "error")
+                continue
+            existing = _match(normalized, entity)
+            plan = _plan_action_locally(
+                existing, entity, normalized, job.strategy, job.update_mode, custom_fields_map, custom_values
+            )
             action = plan["action"]
 
             if action == "invalid":
@@ -423,8 +593,17 @@ async def run_import(
                 if plan.get("duplicate_of"):
                     if allow_duplicate_creates:
                         # Explicit opt-in: insert anyway and flag for the Duplicates page.
-                        created = await _apply_create(session, normalized, plan["entity"], current_user.id)
+                        created = await _apply_create(
+                            session,
+                            normalized,
+                            plan["entity"],
+                            current_user.id,
+                            company=_match({"company_name": normalized.get("company_name")}, "company")
+                            if plan["entity"] == "contact"
+                            else None,
+                        )
                         await session.flush()
+                        _register(created, plan["entity"], normalized)
                         counters["duplicate"] += 1
                         _flag_duplicate(session, plan["entity"], plan["duplicate_of"], created, plan)
                         _record_row(
@@ -493,8 +672,17 @@ async def run_import(
                 continue
 
             # action == "added"
-            created = await _apply_create(session, normalized, plan["entity"], current_user.id)
+            created = await _apply_create(
+                session,
+                normalized,
+                plan["entity"],
+                current_user.id,
+                company=_match({"company_name": normalized.get("company_name")}, "company")
+                if plan["entity"] == "contact"
+                else None,
+            )
             await session.flush()
+            _register(created, plan["entity"], normalized)
             custom_written = await _apply_custom_values(
                 session, normalized, plan["entity"], created.id, current_user.id, job.update_mode
             )
@@ -861,7 +1049,13 @@ async def _find_contact(session: AsyncSession, normalized: dict[str, Any]) -> Co
 # ---------------------------------------------------------------------------
 
 
-async def _apply_create(session: AsyncSession, normalized: dict[str, Any], entity: str, user_id: int | None):
+async def _apply_create(
+    session: AsyncSession,
+    normalized: dict[str, Any],
+    entity: str,
+    user_id: int | None,
+    company: Company | None = None,
+):
     if entity == "company":
         company = Company(
             name=(normalized.get("company_name") or "Unknown Company")[:300],
@@ -914,25 +1108,260 @@ async def _apply_create(session: AsyncSession, normalized: dict[str, Any], entit
     # Link the contact to an existing company or create one if the import
     # row names a company that does not yet exist in the base.
     if contact.company_name:
-        company = (
-            await session.execute(
-                select(Company).where(func.lower(Company.name) == contact.company_name.strip().lower()).limit(1)
-            )
-        ).scalar_one_or_none()
-        if not company:
-            company = Company(
-                name=contact.company_name.strip()[:300],
-                source="import",
-                created_by_id=user_id,
-            )
-            company.data_quality_score = _company_quality(company)
-            session.add(company)
-            await session.flush()
+        if company is None:
+            company = (
+                await session.execute(
+                    select(Company).where(func.lower(Company.name) == contact.company_name.strip().lower()).limit(1)
+                )
+            ).scalar_one_or_none()
+            if not company:
+                company = Company(
+                    name=contact.company_name.strip()[:300],
+                    source="import",
+                    created_by_id=user_id,
+                )
+                company.data_quality_score = _company_quality(company)
+                session.add(company)
+                await session.flush()
         contact.company_id = company.id
         contact.company_name = company.name
 
     session.add(contact)
     return contact
+
+
+# asyncpg rejects statements with more than 32,767 parameters; stay safely below.
+_MAX_IN_PARAMS = 30_000
+
+
+def _chunked(seq: list[Any], size: int = 400) -> Iterator[list[Any]]:
+    for i in range(0, len(seq), size):
+        yield seq[i : i + size]
+
+
+async def _bulk_load_contacts(
+    session: AsyncSession, plan_rows: list[tuple[Any, Any]]
+) -> tuple[dict[str, Contact], dict[str, list[Contact]], dict[tuple[str, str], list[Contact]]]:
+    """One pass of chunked lookups: contacts by email, full name, and first+last."""
+    email_keys: set[str] = set()
+    name_keys: set[str] = set()
+    firsts: set[str] = set()
+    lasts: set[str] = set()
+    for _idx, (tag, payload) in plan_rows:
+        if tag == "inv":
+            continue  # invalid-row plan carries no identity
+        normalized: dict[str, Any] = payload
+        email = (normalized.get("email") or "").strip().lower()
+        if email:
+            email_keys.add(email)
+        full_name = _full_name_for(normalized)
+        if full_name:
+            name_keys.add(full_name.lower())
+            parts = full_name.split(None, 1)
+            if len(parts) == 2:
+                firsts.add(parts[0].lower())
+                lasts.add(parts[1].lower())
+
+    by_email: dict[str, Contact] = {}
+    by_name: dict[str, list[Contact]] = {}
+    by_fl: dict[tuple[str, str], list[Contact]] = {}
+    for chunk in _chunked(sorted(email_keys), 400):
+        for c in (
+            await session.execute(select(Contact).where(func.lower(Contact.email).in_(chunk)))
+        ).scalars():
+            if c.email:
+                by_email[c.email.strip().lower()] = c
+    for chunk in _chunked(sorted(name_keys), 400):
+        for c in (
+            await session.execute(select(Contact).where(func.lower(Contact.full_name).in_(chunk)))
+        ).scalars():
+            by_name.setdefault((c.full_name or "").strip().lower(), []).append(c)
+    if firsts and lasts and len(firsts) + len(lasts) <= _MAX_IN_PARAMS:
+        for c in (
+            await session.execute(
+                select(Contact).where(
+                    func.lower(Contact.first_name).in_(sorted(firsts)),
+                    func.lower(Contact.last_name).in_(sorted(lasts)),
+                )
+            )
+        ).scalars():
+            by_fl.setdefault(
+                ((c.first_name or "").strip().lower(), (c.last_name or "").strip().lower()), []
+            ).append(c)
+    return by_email, by_name, by_fl
+
+
+async def _bulk_load_companies(
+    session: AsyncSession, plan_rows: list[tuple[Any, Any]]
+) -> tuple[dict[str, Company], dict[str, Company]]:
+    domain_keys: set[str] = set()
+    name_keys: set[str] = set()
+    for _idx, (tag, payload) in plan_rows:
+        if tag == "inv":
+            continue  # invalid-row plan carries no identity
+        normalized = payload
+        domain = (normalized.get("domain") or "").strip().lower().removeprefix("www.")
+        if domain:
+            domain_keys.add(domain)
+        host = _domain_from_url(normalized.get("website"))
+        if host:
+            domain_keys.add(host)
+        name = (normalized.get("company_name") or "").strip().lower()
+        if name:
+            name_keys.add(name)
+
+    by_domain: dict[str, Company] = {}
+    by_name: dict[str, Company] = {}
+    for chunk in _chunked(sorted(domain_keys), 400):
+        for c in (
+            await session.execute(select(Company).where(func.lower(Company.domain).in_(chunk)))
+        ).scalars():
+            if c.domain:
+                by_domain[c.domain.strip().lower().removeprefix("www.")] = c
+    for chunk in _chunked(sorted(name_keys), 400):
+        for c in (
+            await session.execute(select(Company).where(func.lower(Company.name).in_(chunk)))
+        ).scalars():
+            by_name[(c.name or "").strip().lower()] = c
+    return by_domain, by_name
+
+
+async def _bulk_load_custom_fields(session: AsyncSession) -> dict[tuple[str, str], CustomField]:
+    fields = (await session.execute(select(CustomField))).scalars()
+    return {(f.entity_type, f.key): f for f in fields}
+
+
+async def _bulk_load_custom_values(
+    session: AsyncSession, contact_ids: set[int], company_ids: set[int]
+) -> dict[str, dict[int, set[int]]]:
+    """entity -> entity_id -> set of custom_field_ids that already have a value."""
+    out: dict[str, dict[int, set[int]]] = {"contact": {}, "company": {}}
+    for entity, ids in (("contact", sorted(contact_ids)), ("company", sorted(company_ids))):
+        for chunk in _chunked(ids):
+            for eid, fid in (
+                await session.execute(
+                    select(CustomFieldValue.entity_id, CustomFieldValue.custom_field_id).where(
+                        CustomFieldValue.entity_type == entity,
+                        CustomFieldValue.entity_id.in_(chunk),
+                    )
+                )
+            ).all():
+                out[entity].setdefault(eid, set()).add(fid)
+    return out
+
+
+def _match_contact_locally(
+    normalized: dict[str, Any],
+    by_email: dict[str, Contact],
+    by_name: dict[str, list[Contact]],
+    by_fl: dict[tuple[str, str], list[Contact]],
+) -> Contact | None:
+    email = (normalized.get("email") or "").strip().lower()
+    if email and email in by_email:
+        return by_email[email]
+    full_name = _full_name_for(normalized)
+    if not full_name:
+        return None
+    candidates = list(by_name.get(full_name.lower(), []))
+    if not candidates:
+        parts = full_name.split(None, 1)
+        if len(parts) == 2:
+            candidates = list(by_fl.get((parts[0].lower(), parts[1].lower()), []))
+    if not candidates:
+        return None
+    company = (normalized.get("company_name") or "").strip().lower()
+    phone = canonical_for_matching(normalized.get("phone")) or ""
+    linkedin = (normalized.get("linkedin_url") or "").strip().lower()
+    for cand in candidates:
+        same_company = bool(company) and (cand.company_name or "").strip().lower() == company
+        same_phone = bool(phone) and (canonical_for_matching(cand.phone) or "") == phone
+        same_linkedin = bool(linkedin) and (cand.linkedin_url or "").strip().lower() == linkedin
+        if same_company or same_phone or same_linkedin:
+            return cand
+    return None
+
+
+def _match_company_locally(
+    normalized: dict[str, Any],
+    by_domain: dict[str, Company],
+    by_name: dict[str, Company],
+) -> Company | None:
+    domain = (normalized.get("domain") or "").strip().lower().removeprefix("www.")
+    if domain and domain in by_domain:
+        return by_domain[domain]
+    host = _domain_from_url(normalized.get("website"))
+    if host and host in by_domain:
+        return by_domain[host]
+    name = (normalized.get("company_name") or "").strip().lower()
+    if name:
+        return by_name.get(name)
+    return None
+
+
+def _plan_action_locally(
+    existing: Company | Contact | None,
+    entity: str,
+    normalized: dict[str, Any],
+    strategy: str,
+    update_mode: str,
+    custom_fields_map: dict[tuple[str, str], CustomField],
+    custom_values_map: dict[str, dict[int, set[int]]],
+) -> dict[str, Any]:
+    """In-memory twin of ``_plan_row`` — same decisions, no per-row queries."""
+    if existing is None:
+        if strategy == "update":
+            return {
+                "action": "skipped",
+                "entity": entity,
+                "reason": f"No matching {entity}; strategy is 'update' so new records are not created",
+                "changes": {},
+            }
+        return {"action": "added", "entity": entity, "reason": None, "changes": {}}
+
+    if strategy in ("skip_duplicates", "add"):
+        return {
+            "action": "skipped",
+            "entity": entity,
+            "duplicate_of": existing.id,
+            "reason": f"Matches existing {entity} #{existing.id}; strategy is '{strategy}' so it was left untouched",
+            "changes": {},
+        }
+
+    changes = _field_changes(existing, normalized, update_mode, entity)
+    custom_pending = 0
+    for _target, (custom_entity, custom_name, _value) in _custom_targets(normalized).items():
+        if custom_entity != entity:
+            continue
+        key = re.sub(r"[^a-z0-9]+", "_", custom_name.strip().lower()).strip("_")[:100]
+        if not key:
+            continue
+        field = custom_fields_map.get((entity, key))
+        if field is None:
+            custom_pending += 1
+            continue
+        if update_mode == "overwrite":
+            custom_pending += 1
+            continue
+        if field.id not in custom_values_map.get(entity, {}).get(existing.id, set()):
+            custom_pending += 1
+
+    if not changes and not custom_pending:
+        return {
+            "action": "unchanged",
+            "entity": entity,
+            "target": existing,
+            "reason": "All mapped fields already match",
+            "changes": {},
+        }
+    if not changes:
+        return {
+            "action": "updated",
+            "entity": entity,
+            "target": existing,
+            "reason": f"{custom_pending} custom field(s) to write",
+            "changes": {},
+        }
+    return {"action": "updated", "entity": entity, "target": existing, "reason": None, "changes": changes}
 
 
 def _flag_duplicate(session: AsyncSession, entity: str, existing_id: int, created: Any, plan: dict[str, Any]) -> None:

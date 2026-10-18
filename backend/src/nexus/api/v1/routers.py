@@ -6,6 +6,7 @@ from nexus.api.v1 import (
     activity,
     analytics,
     auth,
+    billing,
     calls,
     campaigns,
     companies,
@@ -52,3 +53,4 @@ api_router.include_router(calls.router)
 api_router.include_router(notes.router)
 api_router.include_router(campaigns.router)
 api_router.include_router(exports.router)
+api_router.include_router(billing.router)

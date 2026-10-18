@@ -125,6 +125,9 @@ def _company_sort_column(sort: str):
 async def create_company(
     body: CompanyCreate, session: AsyncSession = Depends(get_session), current_user=Depends(get_current_user)
 ):
+    from nexus.api.v1.billing import enforce_record_quota
+
+    await enforce_record_quota(session, current_user)
     company = Company(**body.model_dump(), created_by_id=current_user.id, data_quality_score=_company_quality(body))
     session.add(company)
     await session.flush()

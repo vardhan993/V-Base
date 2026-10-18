@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
-import { useAuthStore, useThemeStore, useCommandPaletteStore } from "@/lib/store";
+import { useAuthStore, useThemeStore, useCommandPaletteStore, useSidebarStore } from "@/lib/store";
 import {
   IconSearch,
   IconPlus,
@@ -68,9 +68,23 @@ export function Topbar() {
     [navigate, search],
   );
 
+  const { setMobileOpen, mobileOpen } = useSidebarStore();
+
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b border-[var(--vbase-border)] bg-[var(--vbase-bg)]/95 backdrop-blur supports-[backdrop-filter]:bg-[var(--vbase-bg)]/70 px-4">
-      <form onSubmit={submitSearch} className="flex flex-1 items-center gap-3">
+    <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-[var(--vbase-border)] bg-[var(--vbase-bg)]/95 backdrop-blur supports-[backdrop-filter]:bg-[var(--vbase-bg)]/70 px-3 sm:px-4">
+      {/* Off-canvas navigation on phone widths. */}
+      <button
+        type="button"
+        aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+        aria-expanded={mobileOpen}
+        onClick={() => setMobileOpen(!mobileOpen)}
+        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-[var(--vbase-slate700)] hover:bg-[var(--vbase-muted-bg)] md:hidden"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          {mobileOpen ? <path d="M18 6L6 18M6 6l12 12" /> : <><path d="M4 6h16" /><path d="M4 12h16" /><path d="M4 18h16" /></>}
+        </svg>
+      </button>
+      <form onSubmit={submitSearch} className="flex flex-1 items-center gap-2 sm:gap-3">
         <div className="relative flex w-full max-w-md items-center rounded-lg border border-[var(--vbase-border)] bg-[var(--vbase-muted-bg)] py-1.5 pl-3 pr-9 transition-colors focus-within:border-[var(--vbase-indigo)] focus-within:bg-[var(--vbase-bg)] focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--vbase-indigo)_18%,transparent)]">
           <IconSearch className="ml-2 h-4 w-4 text-[var(--vbase-slate500)]" />
           <input

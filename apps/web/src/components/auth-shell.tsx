@@ -78,7 +78,8 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
         </div>
 
         <p className="relative z-10 text-xs text-indigo-100/50">
-          Free tier · PostgreSQL-backed · local-first philosophy
+          Everything included
+ · PostgreSQL-backed · your data stays yours
         </p>
       </aside>
 

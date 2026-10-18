@@ -335,7 +335,6 @@ function EmailSetupHint({ status }: { status: EmailStatus | null }) {
                 </a>
               </>
             )}
-            . The free tier covers a normal follow-up volume.
           </li>
           <li>
             Verify the sending domain, then set <code className="font-mono">EMAIL_API_KEY</code> and{" "}

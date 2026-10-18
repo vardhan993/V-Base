@@ -44,6 +44,7 @@ class MeResponse(BaseModel):
     full_name: str | None = None
     is_active: bool
     is_superuser: bool
+    plan: str = "starter"
     preferences: dict[str, Any] = Field(default_factory=dict)
     session: SessionInfo | None = None
 

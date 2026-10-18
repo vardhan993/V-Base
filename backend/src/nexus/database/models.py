@@ -181,6 +181,8 @@ class User(Base):
     full_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"), nullable=False)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    # Billing plan (INR tiers). 'admin' = owner account, free & unlimited.
+    plan: Mapped[str] = mapped_column(String(30), default="starter", server_default=text("'starter'"), nullable=False)
     preferences: Mapped[dict[str, Any]] = _json_object_column()
     last_login_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime.datetime] = _created_at_column()

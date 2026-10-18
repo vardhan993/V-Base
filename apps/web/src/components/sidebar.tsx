@@ -1,5 +1,6 @@
+import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useSidebarStore } from "@/lib/store";
+import { useSidebarStore, useAuthStore } from "@/lib/store";
 import {
   IconLayoutDashboard,
   IconBuilding2,
@@ -63,6 +64,7 @@ const GROUPS: { label: string; items: { to: string; label: string; icon: any; ex
       { to: "/analytics", label: "Analytics", icon: IconActivity },
       { to: "/activity", label: "Activity", icon: IconActivity },
       { to: "/backup", label: "Backup & Restore", icon: IconDatabase },
+      { to: "/billing", label: "Plan & Billing", icon: IconStar, exact: false },
       { to: "/settings", label: "Settings", icon: IconSettings },
     ],
   },
@@ -75,12 +77,29 @@ const GROUPS: { label: string; items: { to: string; label: string; icon: any; ex
 ];
 
 export function Sidebar() {
-  const { collapsed, toggle } = useSidebarStore();
+  const { collapsed, toggle, mobileOpen, setMobileOpen } = useSidebarStore();
   const location = useLocation();
 
+  // Any navigation closes the phone drawer.
+  React.useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname, setMobileOpen]);
+
   return (
+    <>
+    {/* Phone drawer backdrop */}
+    {mobileOpen && (
+      <div
+        className="fixed inset-0 z-40 bg-black/40 md:hidden"
+        onClick={() => setMobileOpen(false)}
+        aria-hidden="true"
+      />
+    )}
+    {/* One aside, two behaviours: off-canvas drawer on phones, rail on desktop. */}
     <aside
-      className="fixed left-0 top-0 z-30 flex h-screen flex-col bg-[var(--vbase-sidebar-bg)] border-r border-[var(--vbase-border-dark)] transition-all duration-200"
+      className={`fixed left-0 top-0 h-screen flex-col bg-[var(--vbase-sidebar-bg)] border-r border-[var(--vbase-border-dark)] transition-transform duration-200 md:flex md:translate-x-0 md:z-30 ${
+        mobileOpen ? "z-50 flex translate-x-0" : "-translate-x-full hidden md:block"
+      }`}
       style={{ width: collapsed ? 68 : 224 }}
     >
       {/* Brand tile: gradient plate with the data-cells mark. */}
@@ -157,11 +176,25 @@ export function Sidebar() {
           }`}
         >
           <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[var(--vbase-green)]" />
-          {!collapsed && (
-            <span className="truncate text-[var(--vbase-slate500)]">Free &amp; local-first tier</span>
-          )}
+          {!collapsed && <PlanBadge />}
         </div>
       </div>
     </aside>
+    </>
+  );
+}
+
+/** Plan chip: the owner's admin email is free forever; others show INR price. */
+function PlanBadge() {
+  const user = useAuthStore((s) => s.user);
+  const plan = user?.plan || "starter";
+  const meta: Record<string, string> = {
+    admin: "Admin · unlimited & free",
+    starter: "Starter · ₹499/mo",
+    growth: "Growth · ₹1,499/mo",
+    scale: "Scale · ₹3,999/mo",
+  };
+  return (
+    <span className="truncate text-[var(--vbase-slate500)]">{meta[plan] || plan}</span>
   );
 }
