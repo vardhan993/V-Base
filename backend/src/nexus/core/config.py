@@ -113,6 +113,12 @@ class Settings(BaseSettings):
     email_reply_to: str = ""
     #: HTTP timeout for a provider send, in seconds.
     email_timeout_seconds: int = 15
+    #: Destination inbox for landing-page contact-form enquiries. Blank falls
+    #: back to ``email_from`` so a fresh deployment still receives its leads.
+    contact_form_inbox: str = ""
+    #: Public-form requests per IP per minute — the tightest bucket, since the
+    #: endpoint takes submissions with no session at all.
+    rate_limit_contact_per_minute: int = 5
 
     #: --- Gmail (GOOGLE OAuth) -----------------------------------------
     #: An OAuth client created in Google Cloud with the Gmail API enabled.

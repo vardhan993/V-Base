@@ -319,15 +319,16 @@ def test_unchanged_rows_are_reported_separately(auth_client):
     assert result["rows_updated"] == 0
 
 
-def test_import_is_transactional_on_failure(auth_client):
-    """A row that violates a database constraint must roll the whole run back.
+def test_import_flags_bad_rows_and_continues(auth_client):
+    """A row that violates a database constraint is flagged, not fatal.
 
-    The second row carries a negative employee count, which the
-    ck_companies_employee_count CHECK constraint rejects. Because the run is a
-    single transaction, the valid first row must not survive either.
+    Each row is applied inside a savepoint, so a row with a negative employee
+    count — rejected by the ck_companies_employee_count CHECK constraint — is
+    recorded in the error report while every valid row is still imported.
     """
-    csv = "Company,Website,Employees\nRollback Probe,https://rollback.example,50\nBad Row,https://bad.example,-5\n"
-    job_id = upload(auth_client, csv, name="rollback.csv")
+    rows = [f"Company {i},https://c{i}.example,{i}" for i in range(1, 26)]
+    csv = "Company,Website,Employees\n" + "\n".join(rows) + "\nBad Row,https://bad.example,-5\n"
+    job_id = upload(auth_client, csv, name="badrow.csv")
     set_mapping(
         auth_client,
         job_id,
@@ -335,15 +336,19 @@ def test_import_is_transactional_on_failure(auth_client):
     )
 
     response = auth_client.post(f"/api/v1/import/run/{job_id}")
-    assert response.status_code == 400, response.text
-    assert "rolled back" in response.json()["detail"]
+    assert response.status_code == 200, response.text
 
-    companies = auth_client.get("/api/v1/companies", params={"q": "Rollback Probe"}).json()
-    assert companies["total"] == 0, "a failed import must leave no rows behind"
+    companies = auth_client.get("/api/v1/companies").json()
+    assert companies["total"] == 25, "valid rows must all be imported"
 
-    # The job is not left claiming success.
     detail = auth_client.get(f"/api/v1/import/{job_id}").json()
-    assert detail["status"] != "completed"
+    assert detail["status"] == "completed"
+    assert detail["rows_added"] == 25
+    assert detail["rows_invalid"] == 1
+
+    report = auth_client.get(f"/api/v1/import/errors/{job_id}").json()
+    assert report["count"] == 1
+    assert "Database rejected row" in report["data"][0]["message"]
 
 
 # ---------------------------------------------------------------------------

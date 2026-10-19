@@ -19,11 +19,16 @@ logger = logging.getLogger("nexus.request")
 
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
+#: Public marketing endpoint (landing-page contact form) — reachable with no
+#: session, so it gets the tightest dedicated bucket.
+_CONTACT_PATH = "/api/v1/contact"
+
 #: Endpoints that are reachable before a session exists. They still get the
 #: Origin check, but there is no session cookie to double-submit against.
 _PRE_AUTH_PATHS = {
     "/api/v1/auth/login",
     "/api/v1/auth/signup",
+    _CONTACT_PATH,
 }
 
 #: Endpoints called server-to-server by a provider rather than by a browser.
@@ -169,10 +174,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "auth": settings.rate_limit_auth_per_minute,
             "session": settings.rate_limit_session_per_minute,
             "write": settings.rate_limit_write_per_minute,
+            "contact": settings.rate_limit_contact_per_minute,
             **(limits or {}),
         }
 
     def _bucket(self, path: str, method: str) -> str | None:
+        if path == _CONTACT_PATH:
+            return "contact"
         if path in _CREDENTIAL_PATHS:
             return "auth"
         if method in _UNSAFE_METHODS:

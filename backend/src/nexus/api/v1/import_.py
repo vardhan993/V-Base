@@ -39,9 +39,11 @@ logger = logging.getLogger(__name__)
 
 _MAX_PREVIEW_ROWS = 100
 _MAX_PREVIEW_COLS = 60
-#: Rows applied between flushes. The whole run still commits once, so a failure
-#: mid-file leaves nothing behind; flushing only bounds ORM memory use.
-_FLUSH_EVERY = 250
+#: Rows applied between commits. Each committed batch keeps the progress
+#: endpoint live (rows added so far are visible while the run continues). Rows
+#: the database rejects are flagged and skipped — only a connection-level
+#: failure would give up the uncommitted batch.
+_FLUSH_EVERY = 25
 
 #: Row-level import behaviour.
 STRATEGIES = {
@@ -450,12 +452,16 @@ async def run_import(
     session: AsyncSession = Depends(get_session),
     current_user=Depends(get_current_user),
 ):
-    """Apply the import in ONE transaction.
+    """Apply the import row by row, in batched commits, continuing past bad rows.
 
     Every row is planned first (same code path as ``/import/plan``), then rows
-    are applied. Any unexpected error rolls the entire run back, so a partial
-    import is impossible. The response counters come from the same objects that
-    were written, not from a recomputation.
+    are applied and committed every ``_FLUSH_EVERY`` rows. Each row's writes run
+    inside a savepoint, so a row the database rejects is flagged in the error
+    report and the run keeps going instead of stopping. Each completed batch is
+    durable and visible to ``/import/progress`` immediately, so the live
+    counters show how many rows have actually been written while the run is
+    still going. An unexpected (non-row) failure rolls back only the in-flight
+    batch; the rows committed before it stay saved.
     """
     job = await _owned_job(session, job_id, current_user.id)
 
@@ -560,6 +566,30 @@ async def run_import(
             if normalized.get("company_name"):
                 new_companies_name[str(normalized["company_name"]).strip().lower()] = created
 
+    def _persist_counters(j: ImportJob, c: dict[str, int]) -> None:
+        """Mirror the live counters onto the job row so batches survive a crash."""
+        j.rows_added = c["added"]
+        j.rows_updated = c["updated"]
+        j.rows_unchanged = c["unchanged"]
+        j.rows_duplicate = c["duplicate"]
+        j.rows_skipped = c["skipped"]
+        j.rows_invalid = c["invalid"]
+
+    async def _flag_row_rejected(
+        idx: int, raw_row: dict[str, Any], normalized: dict[str, Any], exc: Any, entity: str | None
+    ) -> None:
+        """After a per-row savepoint rollback: flag the row and keep going.
+
+        Rolling back to the savepoint undid this row's writes but left the
+        outer transaction usable, so the error report still lands on disk and
+        the remaining rows are applied as planned.
+        """
+        counters["invalid"] += 1
+        await session.flush()
+        reason = f"Database rejected row: {type(exc).__name__}: {exc}"[:300]
+        _record_row(session, job, idx, raw_row, normalized, "invalid", reason, None, entity)
+        _record_error(session, job, idx, None, raw_row, reason, "error")
+
     try:
         for idx, (tag, normalized), raw_row in plan_rows:
             job.rows_processed = (job.rows_processed or 0) + 1
@@ -593,30 +623,37 @@ async def run_import(
                 if plan.get("duplicate_of"):
                     if allow_duplicate_creates:
                         # Explicit opt-in: insert anyway and flag for the Duplicates page.
-                        created = await _apply_create(
-                            session,
-                            normalized,
-                            plan["entity"],
-                            current_user.id,
-                            company=_match({"company_name": normalized.get("company_name")}, "company")
-                            if plan["entity"] == "contact"
-                            else None,
-                        )
-                        await session.flush()
-                        _register(created, plan["entity"], normalized)
-                        counters["duplicate"] += 1
-                        _flag_duplicate(session, plan["entity"], plan["duplicate_of"], created, plan)
-                        _record_row(
-                            session,
-                            job,
-                            idx,
-                            raw_row,
-                            normalized,
-                            "duplicate",
-                            plan.get("reason"),
-                            created,
-                            plan["entity"],
-                        )
+                        # A per-row savepoint keeps a bad row from stopping the run.
+                        try:
+                            async with session.begin_nested():
+                                created = await _apply_create(
+                                    session,
+                                    normalized,
+                                    plan["entity"],
+                                    current_user.id,
+                                    company=_match({"company_name": normalized.get("company_name")}, "company")
+                                    if plan["entity"] == "contact"
+                                    else None,
+                                )
+                                await session.flush()
+                                _flag_duplicate(session, plan["entity"], plan["duplicate_of"], created, plan)
+                                _record_row(
+                                    session,
+                                    job,
+                                    idx,
+                                    raw_row,
+                                    normalized,
+                                    "duplicate",
+                                    plan.get("reason"),
+                                    created,
+                                    plan["entity"],
+                                )
+                            counters["duplicate"] += 1
+                            # Register only after the savepoint released — a
+                            # rolled-back create must not stay findable.
+                            _register(created, plan["entity"], normalized)
+                        except Exception as exc:
+                            await _flag_row_rejected(idx, raw_row, normalized, exc, plan["entity"])
                     else:
                         counters["skipped"] += 1
                         _record_row(
@@ -645,68 +682,106 @@ async def run_import(
                 continue
 
             if action == "updated":
-                target = plan["target"]
-                for field, change in plan["changes"].items():
-                    setattr(target, field, change["to"])
-                target.data_quality_score = (
-                    _company_quality(target) if plan["entity"] == "company" else _contact_quality(target)
-                )
-                await session.flush()
-                custom_written = await _apply_custom_values(
-                    session, normalized, plan["entity"], target.id, current_user.id, job.update_mode
-                )
-                counters["updated"] += 1
-                _record_row(
-                    session,
-                    job,
-                    idx,
-                    raw_row,
-                    normalized,
-                    "updated",
-                    f"{len(plan['changes'])} field(s) updated"
-                    + (f", {custom_written} custom field(s)" if custom_written else ""),
-                    target,
-                    plan["entity"],
-                    update_preview=plan["changes"],
-                )
+                # Per-row savepoint: one bad row is flagged, not fatal.
+                try:
+                    async with session.begin_nested():
+                        target = plan["target"]
+                        for field, change in plan["changes"].items():
+                            setattr(target, field, change["to"])
+                        target.data_quality_score = (
+                            _company_quality(target) if plan["entity"] == "company" else _contact_quality(target)
+                        )
+                        await session.flush()
+                        custom_written = await _apply_custom_values(
+                            session, normalized, plan["entity"], target.id, current_user.id, job.update_mode
+                        )
+                        _record_row(
+                            session,
+                            job,
+                            idx,
+                            raw_row,
+                            normalized,
+                            "updated",
+                            f"{len(plan['changes'])} field(s) updated"
+                            + (f", {custom_written} custom field(s)" if custom_written else ""),
+                            target,
+                            plan["entity"],
+                            update_preview=plan["changes"],
+                        )
+                    counters["updated"] += 1
+                except Exception as exc:
+                    await _flag_row_rejected(idx, raw_row, normalized, exc, plan["entity"])
                 continue
 
             # action == "added"
-            created = await _apply_create(
-                session,
-                normalized,
-                plan["entity"],
-                current_user.id,
-                company=_match({"company_name": normalized.get("company_name")}, "company")
-                if plan["entity"] == "contact"
-                else None,
-            )
-            await session.flush()
-            _register(created, plan["entity"], normalized)
-            custom_written = await _apply_custom_values(
-                session, normalized, plan["entity"], created.id, current_user.id, job.update_mode
-            )
-            counters["added"] += 1
-            _record_row(
-                session,
-                job,
-                idx,
-                raw_row,
-                normalized,
-                "added",
-                f"{custom_written} custom field(s)" if custom_written else None,
-                created,
-                plan["entity"],
-            )
+            # Per-row savepoint: one bad row is flagged, not fatal.
+            try:
+                async with session.begin_nested():
+                    created = await _apply_create(
+                        session,
+                        normalized,
+                        plan["entity"],
+                        current_user.id,
+                        company=_match({"company_name": normalized.get("company_name")}, "company")
+                        if plan["entity"] == "contact"
+                        else None,
+                    )
+                    await session.flush()
+                    custom_written = await _apply_custom_values(
+                        session, normalized, plan["entity"], created.id, current_user.id, job.update_mode
+                    )
+                    _record_row(
+                        session,
+                        job,
+                        idx,
+                        raw_row,
+                        normalized,
+                        "added",
+                        f"{custom_written} custom field(s)" if custom_written else None,
+                        created,
+                        plan["entity"],
+                    )
+                counters["added"] += 1
+                # Register only after the savepoint released — a rolled-back
+                # create must not stay findable by later rows.
+                _register(created, plan["entity"], normalized)
+            except Exception as exc:
+                await _flag_row_rejected(idx, raw_row, normalized, exc, plan["entity"])
 
             if (job.rows_processed or 0) % _FLUSH_EVERY == 0:
-                await session.flush()
+                _persist_counters(job, counters)
+                await session.commit()
 
         job.status = "completed"
-    except Exception as exc:  # roll the whole run back
+    except Exception as exc:
+        # Only non-row failures reach this (row-level problems are caught by
+        # the per-row savepoints above). Every batch committed before it is
+        # kept; the in-flight batch is rolled back and the counters are
+        # recomputed from the rows that actually made it to disk.
         await session.rollback()
-        logger.exception("Import job %s failed", job_id)
-        raise ImportError(f"Import failed and was rolled back: {exc}") from exc
+        logger.exception("Import job %s failed part-way", job_id)
+        await session.refresh(job)
+        stmt = (
+            select(ImportRow.status, func.count(ImportRow.id))
+            .where(ImportRow.import_job_id == job.id)
+            .group_by(ImportRow.status)
+        )
+        by_status = {row[0]: row[1] for row in (await session.execute(stmt)).fetchall()}
+        job.rows_added = by_status.get("added", 0)
+        job.rows_updated = by_status.get("updated", 0)
+        job.rows_unchanged = by_status.get("unchanged", 0)
+        job.rows_duplicate = by_status.get("duplicate", 0)
+        job.rows_skipped = by_status.get("skipped", 0)
+        job.rows_invalid = by_status.get("invalid", 0)
+        job.rows_processed = sum(by_status.values())
+        job.status = "failed"
+        job.finished_at = _utcnow()
+        job.error_summary = (
+            f"Import stopped after {job.rows_processed} of {job.rows_total} row(s): {exc} "
+            "Rows committed before the failure were kept."
+        )
+        await session.commit()
+        raise ImportError(f"Import stopped part-way — {job.rows_processed} row(s) kept: {exc}") from exc
     finally:
         job.finished_at = _utcnow()
 

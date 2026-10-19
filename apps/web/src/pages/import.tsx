@@ -545,8 +545,8 @@ function UploadStep({
         />
         <InfoTile
           icon={<IconLayers className="h-4 w-4" />}
-          title="One transaction"
-          body="A failed import rolls back completely. Existing values are never overwritten silently."
+          title="Counted as it goes"
+          body="Rows are applied one by one — bad rows are flagged in the error report instead of stopping the run. A live count shows what has been added."
         />
       </div>
 
@@ -1244,11 +1244,18 @@ function RunningStep({ jobId }: { jobId: number }) {
         <IconLoader2 className="h-7 w-7 animate-spin" />
       </div>
       <div>
-        <h2 className="text-lg font-semibold text-[var(--vbase-slate800)]">Importing in one transaction</h2>
+        <h2 className="text-lg font-semibold text-[var(--vbase-slate800)]">Importing rows</h2>
         <p className="mt-1 text-sm text-[var(--vbase-slate500)]">
-          Every row is being applied. The whole run commits once — a failure rolls everything back.
+          Rows are applied one by one and saved in batches. Bad rows are flagged in the error report instead of stopping the run.
         </p>
       </div>
+
+      {progress && (
+        <p className="text-3xl font-semibold text-[var(--vbase-indigo)] tabular-nums">
+          {(progress.by_status?.added ?? 0).toLocaleString()}
+          <span className="ml-2 text-sm font-normal text-[var(--vbase-slate500)]">added so far</span>
+        </p>
+      )}
 
       <div className="w-full max-w-lg">
         <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--vbase-bg-alt)]">

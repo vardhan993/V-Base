@@ -280,14 +280,13 @@ function ContactRow({
           className="h-4 w-4 rounded border-[var(--vbase-border)] text-[var(--vbase-indigo)]"
         />
       </td>
-      <td className="px-3 py-3">
-        <a
-          href={`#/contacts/${contact.id}`}
-          title={`Record ID ${contact.id} — click to open`}
-          className="rounded bg-[var(--vbase-muted-bg)] px-1.5 py-0.5 font-mono text-xs text-[var(--vbase-slate600)] transition-colors hover:text-[var(--vbase-indigo)]"
+      <td className="px-3 py-3 text-right">
+        <span
+          className="font-mono text-xs text-[var(--vbase-slate500)] whitespace-nowrap"
+          title={`Record ID ${contact.id}`}
         >
-          #{contact.id}
-        </a>
+          {contact.id}
+        </span>
       </td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-3 min-w-0">

@@ -46,6 +46,10 @@ const SequencesPage = lazy(() => import("@/pages/sequences").then((m) => ({ defa
 const SettingsPage = lazy(() => import("@/pages/settings").then((m) => ({ default: m.SettingsPage })));
 const BillingPage = lazy(() => import("@/pages/billing").then((m) => ({ default: m.BillingPage })));
 const Layout = lazy(() => import("@/components/layout").then((m) => ({ default: m.Layout })));
+// Public marketing pages: readable signed-out, skip the app shell entirely.
+const LandingPage = lazy(() => import("@/pages/landing").then((m) => ({ default: m.LandingPage })));
+const PrivacyPage = lazy(() => import("@/pages/landing-legal").then((m) => ({ default: m.PrivacyPage })));
+const TermsPage = lazy(() => import("@/pages/landing-legal").then((m) => ({ default: m.TermsPage })));
 
 function AuthLoader({ children }: { children:React.ReactNode }) {
   const { user, loading, setUser, setToken, setLoading } = useAuthStore();
@@ -78,6 +82,13 @@ function AuthLoader({ children }: { children:React.ReactNode }) {
   return <>{children}</>;
 }
 
+function PublicPage({ fallback, children }: { fallback: React.ReactNode; children: React.ReactNode }) {
+  // Landing and legal pages are visible signed-out, so no auth gate — only a
+  // Suspense boundary. The `-m-6` inside page components cancels the shell's
+  // `p-6` so the hero and footer can render edge-to-edge.
+  return <Suspense fallback={fallback}>{children}</Suspense>;
+}
+
 function LoadingScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--vbase-bg)]">
@@ -92,19 +103,30 @@ function LoadingScreen() {
 function AppShell() {
   const location = useLocation();
   const { collapsed } = useSidebarStore();
-  const isAuthRoute = location.pathname.startsWith("/login") || location.pathname.startsWith("/signup");
+  // Public surfaces render edge-to-edge: no sidebar, topbar or command palette.
+  // "/" (the landing page) is matched exactly so the app keeps its sidebar at
+  // every in-app route.
+  const isPublicRoute =
+    ["/login", "/signup", "/landing", "/privacy", "/terms"].some((p) =>
+      location.pathname.startsWith(p)
+    ) || location.pathname === "/";
 
   return (
     <div className="flex h-screen bg-[var(--vbase-bg)]">
-      {!isAuthRoute && <Sidebar />}
+      {!isPublicRoute && <Sidebar />}
       <div
         className={`flex flex-1 flex-col transition-all duration-200 md:ml-[224px] ${
           collapsed ? "md:ml-[68px]" : ""
         }`}
       >
-        {!isAuthRoute && <Topbar />}
+        {!isPublicRoute && <Topbar />}
         <main className="flex-1 p-6 overflow-auto">
           <Routes>
+            {/* Public: marketing landing + legal pages. */}
+            <Route path="/" element={<PublicPage fallback={<LoadingScreen />}><LandingPage /></PublicPage>} />
+            <Route path="/landing" element={<PublicPage fallback={<LoadingScreen />}><LandingPage /></PublicPage>} />
+            <Route path="/privacy" element={<PublicPage fallback={<LoadingScreen />}><PrivacyPage /></PublicPage>} />
+            <Route path="/terms" element={<PublicPage fallback={<LoadingScreen />}><TermsPage /></PublicPage>} />
             <Route
               element={
                 <AuthLoader>
@@ -114,7 +136,6 @@ function AppShell() {
                 </AuthLoader>
               }
             >
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/pipeline" element={<PipelinePage />} />
               <Route path="/tasks" element={<TasksPage />} />
@@ -166,8 +187,8 @@ function AppShell() {
           </Routes>
         </main>
       </div>
-      {!isAuthRoute && <CommandPalette />}
-      {!isAuthRoute && <ToastStack />}
+      {!isPublicRoute && <CommandPalette />}
+      {!isPublicRoute && <ToastStack />}
       <Toaster />
     </div>
   );

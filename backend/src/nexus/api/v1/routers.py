@@ -9,6 +9,7 @@ from nexus.api.v1 import (
     billing,
     calls,
     campaigns,
+    contact,
     companies,
     exports,
     notes,
@@ -30,6 +31,7 @@ from nexus.api.v1 import (
 from nexus.api.v1 import settings as settings_router
 
 api_router = APIRouter()
+api_router.include_router(contact.router)
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(companies.router)

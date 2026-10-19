@@ -942,6 +942,26 @@ EMAIL_STATUSES: tuple[str, ...] = (
 TERMINAL_EMAIL_STATUSES: tuple[str, ...] = ("bounced", "complained", "failed")
 
 
+class ContactMessage(Base):
+    """An enquiry submitted through the public landing-page contact form.
+
+    Rows live here even when the email forward later fails, so a lead is never
+    lost to provider downtime. ``is_forwarded`` tracks the pipe's state.
+    """
+
+    __tablename__ = "contact_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    company: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    is_forwarded: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
+    created_at: Mapped[datetime.datetime] = _created_at_column()
+
+
 class EmailMessage(Base):
     """One outbound email plus the delivery events the provider reports.
 
